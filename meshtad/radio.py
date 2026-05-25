@@ -65,6 +65,18 @@ class Radio:
         self._subscribed = True
 
     @staticmethod
+    def find_macos_ports() -> list[str]:
+        """Fallback macOS serial-port discovery via /dev glob patterns."""
+        import pathlib
+        dev = pathlib.Path("/dev")
+        ports: set[str] = set()
+        for p in dev.glob("cu.usbserial*"):
+            ports.add(str(p))
+        for p in dev.glob("cu.usbmodem*"):
+            ports.add(str(p))
+        return sorted(ports)
+
+    @staticmethod
     def detect_ports() -> list[str]:
         if not MESHTASTIC_AVAILABLE:
             return []

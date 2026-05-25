@@ -26,7 +26,7 @@ def _trunc(text: str, width: int = 40) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="meshcli — thin client for meshtad")
-    parser.add_argument("--db", type=Path, default=Config.default().db_path, help="Path to meshtad.db")
+    parser.add_argument("--db", type=Path, default=None, help="Path to meshtad.db")
     sub = parser.add_subparsers(dest="cmd")
 
     p_send = sub.add_parser("send", help="Send a DM (fire-and-forget)")
@@ -69,12 +69,16 @@ def main() -> int:
 
     p_eject = sub.add_parser("dongle-eject", help="Request daemon to release the radio")
 
+    p_retry = sub.add_parser("retry", help="Retry a FAILED outbound message")
+    p_retry.add_argument("id", type=int, help="Message ID to retry")
+
     args = parser.parse_args()
     if not args.cmd:
         parser.print_help()
         return 1
 
-    db = DbClient(args.db)
+    db_path = args.db or Config.default().db_path
+    db = DbClient(db_path)
 
     if args.cmd == "send":
         body = " ".join(args.body)
@@ -186,7 +190,7 @@ def main() -> int:
 
     if args.cmd == "db-status":
         size = db.db_size_bytes()
-        print(f"DB: {args.db}")
+        print(f"DB: {db_path}")
         print(f"Size: {_fmt_size(size)}")
         counts = db.message_counts()
         for st, c in counts:
@@ -209,6 +213,8 @@ def main() -> int:
         from meshtad.radio import Radio
         ports = Radio.detect_ports()
         if not ports:
+            ports = Radio.find_macos_ports()
+        if not ports:
             print("(no Meshtastic serial ports found)")
             return 0
         for p in ports:
@@ -218,6 +224,18 @@ def main() -> int:
     if args.cmd == "dongle-eject":
         db.enqueue_control("eject")
         print("eject requested; daemon should release radio shortly")
+        return 0
+
+    if args.cmd == "retry":
+        row = db.get_message(args.id)
+        if not row:
+            print(f"! message {args.id} not found")
+            return 1
+        if row["state"] != "FAILED":
+            print(f"! message {args.id} is not FAILED (state={row['state']})")
+            return 1
+        db.retry_message(args.id)
+        print(f"msg_id={args.id} requeued")
         return 0
 
     return 0

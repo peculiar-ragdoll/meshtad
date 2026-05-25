@@ -7,12 +7,15 @@ except for outbox inserts and control-queue writes.
 from __future__ import annotations
 
 import contextlib
+import logging
 import pathlib
 import queue
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+logger = logging.getLogger("meshtad.db")
 
 SCHEMA = """
 PRAGMA journal_mode = WAL;
@@ -74,6 +77,8 @@ def _iso_now(offset_s: float = 0.0) -> str:
 class DbThread(threading.Thread):
     """Single SQLite writer thread. All daemon DB access funnels here."""
 
+    _EXECUTE_TIMEOUT = 30.0  # seconds
+
     def __init__(self, db_path: pathlib.Path):
         super().__init__(name="db-writer", daemon=True)
         self.db_path = db_path
@@ -109,7 +114,10 @@ class DbThread(threading.Thread):
         """Blocking call from other threads. Returns rows for SELECT, lastrowid otherwise."""
         reply_q: queue.Queue = queue.Queue(maxsize=1)
         self._q.put((sql, params, reply_q))
-        status, payload = reply_q.get()
+        try:
+            status, payload = reply_q.get(timeout=self._EXECUTE_TIMEOUT)
+        except queue.Empty:
+            raise RuntimeError("DbThread did not respond within timeout; thread may be dead")
         if status == "err":
             raise payload
         return payload
@@ -117,8 +125,13 @@ class DbThread(threading.Thread):
     def stop(self) -> None:
         self._running = False
         self.join(timeout=5.0)
+        if self.is_alive():
+            logger.warning("DbThread is still alive after stop() timeout")
         if self._conn:
-            self._conn.close()
+            try:
+                self._conn.close()
+            except Exception:
+                pass
 
     def wait_ready(self, timeout: float = 10.0) -> bool:
         return self._ready.wait(timeout=timeout)
@@ -127,11 +140,15 @@ class DbThread(threading.Thread):
 class DbClient:
     """Thin SQLite client used by meshcli. Opens its own connection per call."""
 
+    _ALLOWED_SENDER_FIELDS = frozenset(
+        {"alias", "short_name", "long_name", "auto_delete_after_s"}
+    )
+
     def __init__(self, db_path: pathlib.Path):
         self.db_path = db_path
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=5.0)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -169,6 +186,9 @@ class DbClient:
             return conn.execute("SELECT * FROM senders ORDER BY alias, node_id").fetchall()
 
     def update_sender(self, sender_id: int, **fields):
+        disallowed = set(fields) - self._ALLOWED_SENDER_FIELDS
+        if disallowed:
+            raise ValueError(f"Disallowed sender field(s): {disallowed}")
         with contextlib.closing(self._conn()) as conn:
             for k, v in fields.items():
                 conn.execute(f"UPDATE senders SET {k}=? WHERE id=?", (v, sender_id))
@@ -193,6 +213,16 @@ class DbClient:
             )
             conn.commit()
             return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def retry_message(self, msg_id: int) -> None:
+        """Move a FAILED message back to QUEUED with fresh retry_count."""
+        with contextlib.closing(self._conn()) as conn:
+            conn.execute(
+                "UPDATE messages SET state='QUEUED', retry_count=0, next_attempt_at=NULL "
+                "WHERE id=? AND direction='out' AND state='FAILED'",
+                (msg_id,),
+            )
+            conn.commit()
 
     def inbox(self, unseen_only: bool = False, limit: int = 50, with_alias: str | None = None):
         where = ["direction = 'in'", "state IN ('UNSEEN','SEEN')"]
@@ -253,7 +283,7 @@ class DbClient:
         delete_at = _iso_now(offset_s=auto_delete_after_s) if auto_delete_after_s is not None else None
         with contextlib.closing(self._conn()) as conn:
             conn.execute(
-                "UPDATE messages SET state='SEEN', auto_delete_at=? WHERE id=? AND direction='in'",
+                "UPDATE messages SET state='SEEN', auto_delete_at=? WHERE id=? AND direction='in' AND state='UNSEEN'",
                 (delete_at, msg_id),
             )
             conn.commit()

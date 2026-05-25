@@ -19,8 +19,11 @@ class Daemon:
         from meshtad.radio import Radio
         self.radio = Radio(port=config.serial_port)
         self._shutdown = threading.Event()
-        self._inflight: dict[int, dict] = {}  # packet_id -> {msg_id, sent_at}
+        self._drain_lock = threading.RLock()
+        self._inflight: dict[int, dict] = {}  # packet_id -> {msg_id, sent_at, sent_at_mono}
+        self._deferred_acks: dict[int, str] = {}  # packet_id -> error_reason (sync-race buffer)
         self._inflight_lock = threading.Lock()
+        self._deferred_lock = threading.Lock()
         self._rx_thread: threading.Thread | None = None
         self._tx_thread: threading.Thread | None = None
         self._sched_thread: threading.Thread | None = None
@@ -59,6 +62,9 @@ class Daemon:
     def stop(self) -> None:
         logger.info("Shutting down...")
         self._shutdown.set()
+        # Wait for any in-flight TX drain to finish before closing DB
+        with self._drain_lock:
+            pass
         self.radio.disconnect()
         self.db.stop()
 
@@ -75,7 +81,7 @@ class Daemon:
             packet_id = packet.get("id")
             to_id = packet.get("toId", "")
             # Only DMs (not broadcast)
-            if to_id in ("^all", "ffffffff", "4294967295"):
+            if to_id in ("^all", "ffffffff", "4294967295", "!ffffffff"):
                 return
             sender_id = self._ensure_sender_db(from_id)
             self.db.execute(
@@ -133,31 +139,40 @@ class Daemon:
 
     def _tx_drain_once(self) -> None:
         """Single outbox drain pass.  Invoked by _tx_loop and directly in tests."""
-        now = _iso_now()
-        rows = self.db.execute(
-            """SELECT m.id, m.body, m.retry_count, s.node_id
-               FROM messages m JOIN senders s ON s.id = m.peer_id
-               WHERE m.direction='out' AND m.state='QUEUED'
-                 AND (m.next_attempt_at IS NULL OR m.next_attempt_at <= ?)
-               ORDER BY m.queued_at""",
-            (now,),
-        )
-        if not rows:
-            return
+        with self._drain_lock:
+            now = _iso_now()
+            rows = self.db.execute(
+                """SELECT m.id, m.body, m.retry_count, s.node_id
+                   FROM messages m JOIN senders s ON s.id = m.peer_id
+                   WHERE m.direction='out' AND m.state='QUEUED'
+                     AND (m.next_attempt_at IS NULL OR m.next_attempt_at <= ?)
+                   ORDER BY m.queued_at""",
+                (now,),
+            )
+            if not rows:
+                return
 
-        for msg_id, body, retry_count, dest in rows:
-            ok, packet_id = self.radio.send_text(dest, body)
-            if ok:
-                self.db.execute(
-                    "UPDATE messages SET state='SENT', sent_at=?, meshtastic_packet_id=? WHERE id=?",
-                    (_iso_now(), packet_id, msg_id),
-                )
-                if packet_id is not None:
-                    with self._inflight_lock:
-                        self._inflight[packet_id] = {"msg_id": msg_id, "sent_at": time.time()}
-                logger.info("TX -> %s msg_id=%s packet_id=%s", dest, msg_id, packet_id)
-            else:
-                self._handle_send_failure(msg_id, retry_count, "send_failed")
+            for msg_id, body, retry_count, dest in rows:
+                ok, packet_id = self.radio.send_text(dest, body)
+                if ok:
+                    self.db.execute(
+                        "UPDATE messages SET state='SENT', sent_at=?, meshtastic_packet_id=? WHERE id=?",
+                        (_iso_now(), packet_id, msg_id),
+                    )
+                    deferred_reason = None
+                    if packet_id is not None:
+                        with self._inflight_lock:
+                            self._inflight[packet_id] = {
+                                "msg_id": msg_id,
+                                "sent_at": time.time(),
+                                "sent_at_mono": time.monotonic(),
+                            }
+                            deferred_reason = self._deferred_acks.pop(packet_id, None)
+                        logger.info("TX -> %s msg_id=%s packet_id=%s", dest, msg_id, packet_id)
+                        if deferred_reason is not None:
+                            self._handle_ack_nak(packet_id, deferred_reason)
+                else:
+                    self._handle_send_failure(msg_id, retry_count, "send_failed")
 
     def _handle_send_failure(self, msg_id: int, retry_count: int, error: str) -> None:
         if retry_count >= self.cfg.max_retries:
@@ -181,9 +196,12 @@ class Daemon:
     def _handle_ack_nak(self, request_id: int, error_reason: str) -> None:
         with self._inflight_lock:
             info = self._inflight.pop(request_id, None)
-        if not info:
-            return
-        msg_id = info["msg_id"]
+            if not info:
+                # Synchronous ACK race: callback fired before _inflight was populated.
+                # Stash for replay once the drain finishes recording the packet.
+                self._deferred_acks[request_id] = error_reason
+                return
+            msg_id = info["msg_id"]
 
         # Verify still SENT before acting (race with scheduler)
         rows = self.db.execute("SELECT state, retry_count FROM messages WHERE id=?", (msg_id,))
@@ -205,30 +223,41 @@ class Daemon:
 
     def _sched_loop(self) -> None:
         while not self._shutdown.is_set():
+            # Live config reload
+            if hasattr(self, "_config_watcher") and self._config_watcher:
+                new_cfg = self._config_watcher.reload_if_changed()
+                if new_cfg is not None:
+                    self.cfg = new_cfg
+                    logger.info("Config reloaded from %s", self._config_watcher.path)
             self._sched_tick()
             time.sleep(5.0)
 
     def _sched_tick(self) -> None:
         """Single scheduler pass. Invoked by _sched_loop and directly in tests."""
         now = _iso_now()
-        now_ts = time.time()
 
-        # 1. ACK timeouts
+        # 1. ACK timeouts (monotonic clock)
         all_sent = self.db.execute(
             "SELECT id, retry_count, sent_at, meshtastic_packet_id FROM messages "
             "WHERE direction='out' AND state='SENT' AND acked_at IS NULL"
         )
-        cutoff = now_ts - self.cfg.ack_timeout_s
+        cutoff_mono = time.monotonic() - self.cfg.ack_timeout_s
         for msg_id, retry_count, sent_at_str, packet_id in all_sent:
-            try:
-                t = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00")).timestamp()
-            except Exception:
-                continue
-            if t < cutoff:
-                with self._inflight_lock:
-                    if packet_id in self._inflight:
+            with self._inflight_lock:
+                info = self._inflight.get(packet_id)
+            if info:
+                if info.get("sent_at_mono", 0) < cutoff_mono:
+                    with self._inflight_lock:
                         self._inflight.pop(packet_id, None)
-                self._handle_send_failure(msg_id, retry_count, "ack_timeout")
+                    self._handle_send_failure(msg_id, retry_count, "ack_timeout")
+            else:
+                # Fallback to wall-clock when no in-memory tracking (e.g. restart)
+                try:
+                    t = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00")).timestamp()
+                    if t < time.time() - self.cfg.ack_timeout_s:
+                        self._handle_send_failure(msg_id, retry_count, "ack_timeout")
+                except Exception:
+                    continue
 
         # 2. Auto-delete
         self.db.execute(
