@@ -1,0 +1,13 @@
+[Unit]
+Description=Meshtastic store-and-forward daemon
+After=default.target
+
+[Service]
+Type=simple
+# Adjust the path to your meshtad environment (pipx, venv, or system Python)
+ExecStart=%h/.local/bin/python -m meshtad
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
