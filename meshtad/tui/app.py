@@ -1,10 +1,12 @@
 """Textual TUI app for meshtad."""
 from __future__ import annotations
 
+import os
 import pathlib
 
 from textual.app import App, ComposeResult
 
+from meshtad.config import Config
 from meshtad.tui.screens import InboxScreen
 
 

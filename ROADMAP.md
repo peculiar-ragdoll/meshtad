@@ -42,7 +42,7 @@ Just DMs, SQLite, and a CLI.
 - [ ] **Message threading**
   - Group related messages by conversation (same sender pair, time proximity)
 
-## Phase 3 — TUI (Interactive Client)
+## Phase 3 — TUI (Interactive Client) — DONE
 
 ### 3a — Heartbeat + Skeleton
 DONE
@@ -50,7 +50,7 @@ DONE
   - Daemon writes `daemon_pid` + `daemon_heartbeat` (ISO timestamp) to `meta` table every `_sched_tick`
   - TUI checks heartbeat freshness; stale = "daemon offline"
   - Threshold: 30 s default, configurable
-- [ ] **`meshtad.tui` package skeleton**
+- [x] **`meshtad.tui` package skeleton**
   - `meshtad/tui/` sub-package
   - Textual App subclass, empty InboxScreen
   - Entry point: `meshcli tui` or standalone `meshtui`
@@ -61,10 +61,10 @@ DONE
   - Top: `DataTable` of messages (id, flag, alias, body preview, state, time)
   - Bottom: `Static` panel showing full body + metadata of selected row
   - Footer: `Footer` widget with key bindings
-- [ ] **ASCII state indicators**
+- [x] **ASCII state indicators**
   - `[Q]` QUEUED, `[S]` SENT, `[A]` ACKED, `[F]` FAILED
   - `*` UNSEEN, ` ` SEEN
-- [ ] **Hotkeys**
+- [x] **Hotkeys**
   - `↑/↓` or `k/j` navigate
   - `Enter` open full read view
   - `m` mark read/unread
@@ -86,21 +86,21 @@ DONE
 - [x] **Three tabs: Inbox / Outbox / History**
   - `1`/`2`/`3` switch
   - Each tab is a separate SQL query against the same DB
-- [ ] **Background DB poller**
+- [x] **Background DB poller**
   - `asyncio` task polls inbox/outbox every `poll_interval_s` (default 2)
   - Tracks `MAX(id)` watermark; only fetches newer rows after initial load
   - On new UNSEEN: status bar flashes unread count
-- [ ] **Daemon status in footer**
+- [x] **Daemon status in footer**
   - Green dot + "online" when heartbeat < 30s
   - Red dot + "offline" when heartbeat stale
 
 ### 3e — Polish
-
-- [ ] **Config integration**
+DONE
+- [x] **Config integration**
   - `[tui]` section in `config.toml`: `poll_interval_s`, `theme`
-- [ ] **Help overlay**
+- [x] **Help overlay**
   - `?` key shows all bindings
-- [ ] **Themes**
+- [x] **Themes**
   - Dark default; respect `$NO_COLOR`
 
 ## Phase 4 — Advanced Daemon

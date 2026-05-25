@@ -32,6 +32,8 @@ class Config:
     size_warning_mb: int = 100
     size_warning_enabled: bool = True
     serial_port: Optional[str] = None  # None = auto-detect
+    tui_poll_interval_s: float = 2.0
+    tui_theme: str = "dark"
 
     @classmethod
     def from_toml(cls, path: pathlib.Path) -> "Config":
@@ -50,6 +52,7 @@ class Config:
 
         meshtad = data.get("meshtad", {})
         auto_delete = data.get("auto_delete", {})
+        tui = data.get("tui", {})
 
         for key in ("log_level", "serial_port"):
             if key in meshtad:
@@ -73,6 +76,11 @@ class Config:
 
         if "global_s" in auto_delete:
             cfg.auto_delete_global_s = int(auto_delete["global_s"])
+
+        if "poll_interval_s" in tui:
+            cfg.tui_poll_interval_s = float(tui["poll_interval_s"])
+        if "theme" in tui:
+            cfg.tui_theme = str(tui["theme"]).lower()
 
         return cfg
 

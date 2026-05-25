@@ -47,6 +47,29 @@ class ConfirmDiscardModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class HelpModal(ModalScreen[None]):
+    """Modal showing all available key bindings for the current screen."""
+
+    BINDINGS = [
+        ("q", "close", "Close"),
+        ("escape", "close", "Close"),
+    ]
+
+    def __init__(self, bindings: list[tuple[str, str]], **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._help_bindings = bindings
+
+    def compose(self) -> ComposeResult:
+        lines = ["Key Bindings", "",]
+        for key, desc in self._help_bindings:
+            lines.append(f"  {key:12}  {desc}")
+        yield Static("\n".join(lines), id="help_text", markup=False)
+        yield Footer()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class InboxScreen(Screen):
     """Tabbed message viewer with inbox / outbox / history."""
 
@@ -88,7 +111,6 @@ class InboxScreen(Screen):
         self._setup_table()
         self._refresh_table()
         self._update_status_bar()
-        # Poller every 2s (default)
         self._poll_timer = self.app.set_interval(2.0, self._poll_db)
 
     def _setup_table(self) -> None:
@@ -131,7 +153,6 @@ class InboxScreen(Screen):
     def _row_data(self, raw_row) -> tuple:
         """Convert a DB row tuple into DataTable cell values."""
         if self.tab_idx == 0:
-            # inbox: (id, alias, node_id, body, state, ts)
             msg_id, alias, node_id, body, state, ts = raw_row
             flag = "*" if state == "UNSEEN" else " "
             name = alias or node_id
@@ -139,14 +160,12 @@ class InboxScreen(Screen):
             return (flag, str(msg_id), name, preview, state, ts)
 
         if self.tab_idx == 1:
-            # outbox: (id, alias, node_id, body, state, retry_count, next_attempt, error)
             msg_id, alias, node_id, body, state, retries, next_at, error = raw_row
             name = alias or node_id
             preview = body[:40] + "…" if len(body) > 40 else body
             next_str = next_at or "-"
             return (str(msg_id), name, preview, state, str(retries), next_str)
 
-        # history: (id, direction, alias, node_id, body, state, queued_at, sent_at, acked_at, error)
         msg_id, direction, alias, node_id, body, state, queued_at, sent_at, acked_at, error = raw_row
         flag = "→" if direction == "out" else "←"
         name = alias or node_id
@@ -175,7 +194,6 @@ class InboxScreen(Screen):
         if idx < 0 or idx >= len(rows):
             return
         raw = rows[idx]
-        # Build preview text generically
         client = DbClient(self.db_path)
         if self.tab_idx == 0:
             _, alias, node_id, body, state, ts = raw
@@ -242,6 +260,11 @@ class InboxScreen(Screen):
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
+
+    def action_help(self) -> None:
+        """Show a modal with the current screen's key bindings."""
+        bindings = [(b.key, b.description) for b in self._bindings.shown_keys]
+        self.app.push_screen(HelpModal(bindings))
 
     def action_tab_inbox(self) -> None:
         self._switch_tab(0)

@@ -52,3 +52,32 @@ class TestConfig:
         """Privacy: redact_bodies defaults True."""
         cfg = Config.default()
         assert cfg.redact_bodies is True
+
+
+class TestTuiConfig:
+    def test_tui_defaults(self):
+        """TUI config fields have sensible defaults."""
+        cfg = Config.default()
+        assert cfg.tui_poll_interval_s == 2.0
+        assert cfg.tui_theme == "dark"
+
+    def test_tui_poll_interval_from_toml(self, tmp_path):
+        """[tui] poll_interval_s is parsed from config.toml."""
+        cfg_path = tmp_path / "config.toml"
+        cfg_path.write_text("\n[tui]\npoll_interval_s = 5.5\n")
+        cfg = Config.from_toml(cfg_path)
+        assert cfg.tui_poll_interval_s == 5.5
+
+    def test_tui_theme_from_toml(self, tmp_path):
+        """[tui] theme is parsed from config.toml."""
+        cfg_path = tmp_path / "config.toml"
+        cfg_path.write_text("\n[tui]\ntheme = \"light\"\n")
+        cfg = Config.from_toml(cfg_path)
+        assert cfg.tui_theme == "light"
+
+    def test_tui_theme_no_color(self, tmp_path):
+        """[tui] theme \"no-color\" disables colours."""
+        cfg_path = tmp_path / "config.toml"
+        cfg_path.write_text("\n[tui]\ntheme = \"no-color\"\n")
+        cfg = Config.from_toml(cfg_path)
+        assert cfg.tui_theme == "no-color"
