@@ -8,6 +8,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Input, Label, Static, TextArea
 
 from meshtad.db import DbClient
+from meshtad.tui.heartbeat import is_daemon_online
 
 
 class ConfirmDeleteModal(ModalScreen[bool]):
@@ -47,7 +48,7 @@ class ConfirmDiscardModal(ModalScreen[bool]):
 
 
 class InboxScreen(Screen):
-    """Split-pane inbox viewer."""
+    """Tabbed message viewer with inbox / outbox / history."""
 
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -56,13 +57,26 @@ class InboxScreen(Screen):
         ("m", "mark_read", "Mark read"),
         ("d", "delete", "Delete"),
         ("question_mark", "help", "Help"),
+        ("1", "tab_inbox", "Inbox"),
+        ("2", "tab_outbox", "Outbox"),
+        ("3", "tab_history", "History"),
     ]
+
+    TAB_NAMES = ["Inbox", "Outbox", "History"]
 
     def __init__(self, db_path, **kwargs) -> None:
         super().__init__(**kwargs)
         self.db_path = db_path
+        self.tab_idx = 0
+        self._max_id_seen = 0
+        self._poll_timer = None
+
+    # ------------------------------------------------------------------
+    # Compose / lifecycle
+    # ------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
+        yield Static("[init]", id="status_bar", markup=False)
         yield DataTable(id="message_list")
         yield Vertical(
             Label("Select a message", id="preview"),
@@ -71,116 +85,232 @@ class InboxScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        table = self.query_one("#message_list", DataTable)
-        table.add_columns("Flag", "ID", "From", "Preview", "State", "Time")
-        table.cursor_type = "row"
+        self._setup_table()
         self._refresh_table()
+        self._update_status_bar()
+        # Poller every 2s (default)
+        self._poll_timer = self.app.set_interval(2.0, self._poll_db)
 
-    def _refresh_table(self) -> None:
-        """Reload inbox rows from DB."""
+    def _setup_table(self) -> None:
         table = self.query_one("#message_list", DataTable)
-        table.clear()
+        table.cursor_type = "row"
+        self._rebuild_columns()
+
+    def _rebuild_columns(self) -> None:
+        table = self.query_one("#message_list", DataTable)
+        table.clear(columns=True)
+        cols = self._columns_for_tab()
+        table.add_columns(*cols)
+
+    # ------------------------------------------------------------------
+    # Column specs per tab
+    # ------------------------------------------------------------------
+
+    def _columns_for_tab(self) -> tuple[str, ...]:
+        return {
+            0: ("Flag", "ID", "From", "Preview", "State", "Time"),
+            1: ("ID", "To", "Preview", "State", "Retries", "Next Attempt"),
+            2: ("Dir", "ID", "From/To", "Preview", "State", "Time"),
+        }[self.tab_idx]
+
+    # ------------------------------------------------------------------
+    # Data fetching
+    # ------------------------------------------------------------------
+
+    def _fetch_rows(self):
         client = DbClient(self.db_path)
         try:
-            rows = client.inbox(limit=100)
+            if self.tab_idx == 0:
+                return client.inbox(limit=100)
+            if self.tab_idx == 1:
+                return client.outbox()
+            return client.history(limit=200)
         except Exception:
-            table.add_row("", "", "", "(no schema — is the daemon running?)", "", "")
-            return
-        for msg_id, alias, node_id, body, state, ts in rows:
+            return []
+
+    def _row_data(self, raw_row) -> tuple:
+        """Convert a DB row tuple into DataTable cell values."""
+        if self.tab_idx == 0:
+            # inbox: (id, alias, node_id, body, state, ts)
+            msg_id, alias, node_id, body, state, ts = raw_row
             flag = "*" if state == "UNSEEN" else " "
             name = alias or node_id
             preview = body[:40] + "…" if len(body) > 40 else body
-            table.add_row(flag, str(msg_id), name, preview, state, ts)
-        if rows:
-            table.move_cursor(row=0)
-            self._update_preview(rows[0])
+            return (flag, str(msg_id), name, preview, state, ts)
 
-    def _update_preview(self, row) -> None:
-        """Update the bottom preview pane from a DB row."""
-        _, alias, node_id, body, state, ts = row
+        if self.tab_idx == 1:
+            # outbox: (id, alias, node_id, body, state, retry_count, next_attempt, error)
+            msg_id, alias, node_id, body, state, retries, next_at, error = raw_row
+            name = alias or node_id
+            preview = body[:40] + "…" if len(body) > 40 else body
+            next_str = next_at or "-"
+            return (str(msg_id), name, preview, state, str(retries), next_str)
+
+        # history: (id, direction, alias, node_id, body, state, queued_at, sent_at, acked_at, error)
+        msg_id, direction, alias, node_id, body, state, queued_at, sent_at, acked_at, error = raw_row
+        flag = "→" if direction == "out" else "←"
         name = alias or node_id
-        text = f"From: {name}\nState: {state}\nTime: {ts}\n\n{body}"
-        preview = self.query_one("#preview", Label)
-        preview.update(text)
+        preview = body[:40] + "…" if len(body) > 40 else body
+        return (flag, str(msg_id), name, preview, state, queued_at)
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def _refresh_table(self) -> None:
+        table = self.query_one("#message_list", DataTable)
+        table.clear()
+        rows = self._fetch_rows()
+        if not rows:
+            table.add_row("(no messages)", "", "", "", "", "")
+            self.query_one("#preview", Label).update("Select a message")
+            return
+        for raw in rows:
+            table.add_row(*self._row_data(raw))
+        table.move_cursor(row=0)
+        self._update_preview_from_index(0)
+
+    def _update_preview_from_index(self, idx: int) -> None:
+        rows = self._fetch_rows()
+        if idx < 0 or idx >= len(rows):
+            return
+        raw = rows[idx]
+        # Build preview text generically
+        client = DbClient(self.db_path)
+        if self.tab_idx == 0:
+            _, alias, node_id, body, state, ts = raw
+            name = alias or node_id
+            text = f"From: {name}\nState: {state}\nTime: {ts}\n\n{body}"
+        elif self.tab_idx == 1:
+            msg_id, alias, node_id, body, state, retries, next_at, error = raw
+            name = alias or node_id
+            err_str = f"\nError: {error}" if error else ""
+            text = f"To: {name}\nState: {state}\nRetries: {retries}\nNext: {next_at or '-'}{err_str}\n\n{body}"
+        else:
+            msg_id, direction, alias, node_id, body, state, queued_at, sent_at, acked_at, error = raw
+            name = alias or node_id
+            dir_label = "To" if direction == "out" else "From"
+            text = f"{dir_label}: {name}\nState: {state}\nQueued: {queued_at}\n\n{body}"
+
+        self.query_one("#preview", Label).update(text)
 
     def on_data_table_row_selected(self, event) -> None:
-        """Handle cursor movement in the DataTable."""
         table = self.query_one("#message_list", DataTable)
         row_idx = event.cursor_row
         if row_idx is not None and 0 <= row_idx < table.row_count:
-            client = DbClient(self.db_path)
-            try:
-                rows = client.inbox(limit=100)
-            except Exception:
-                return
-            if row_idx < len(rows):
-                self._update_preview(rows[row_idx])
+            self._update_preview_from_index(row_idx)
 
     def on_data_table_row_highlighted(self, event) -> None:
-        """Handle cursor highlight changes."""
         self.on_data_table_row_selected(event)
 
+    # ------------------------------------------------------------------
+    # Status bar
+    # ------------------------------------------------------------------
+
+    def _update_status_bar(self) -> None:
+        bar = self.query_one("#status_bar", Static)
+        online = is_daemon_online(self.db_path, threshold_s=30.0)
+        status = "[online]" if online else "[OFFLINE]"
+        client = DbClient(self.db_path)
+        try:
+            unseen = len(client.inbox(unseen_only=True, limit=9999))
+        except Exception:
+            unseen = 0
+        tab_label = self.TAB_NAMES[self.tab_idx]
+        if unseen:
+            bar.update(f"{status}  |  Tab: {tab_label}  |  {unseen} unread")
+        else:
+            bar.update(f"{status}  |  Tab: {tab_label}")
+
+    # ------------------------------------------------------------------
+    # Polling
+    # ------------------------------------------------------------------
+
+    def _poll_db(self) -> None:
+        """Background poll: refresh table and status if DB has changed."""
+        client = DbClient(self.db_path)
+        try:
+            result = client._conn().execute("SELECT MAX(id) FROM messages").fetchone()
+            max_id = result[0] or 0
+        except Exception:
+            return
+        if max_id != self._max_id_seen:
+            self._max_id_seen = max_id
+            self._refresh_table()
+        self._update_status_bar()
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def action_tab_inbox(self) -> None:
+        self._switch_tab(0)
+
+    def action_tab_outbox(self) -> None:
+        self._switch_tab(1)
+
+    def action_tab_history(self) -> None:
+        self._switch_tab(2)
+
+    def _switch_tab(self, idx: int) -> None:
+        if self.tab_idx == idx:
+            return
+        self.tab_idx = idx
+        self._rebuild_columns()
+        self._refresh_table()
+        self._update_status_bar()
+
     def action_mark_read(self) -> None:
-        """Mark the selected UNSEEN message as SEEN."""
+        if self.tab_idx != 0:
+            return
         table = self.query_one("#message_list", DataTable)
         row_idx = table.cursor_row
         if row_idx is None:
             return
-        client = DbClient(self.db_path)
-        try:
-            rows = client.inbox(limit=100)
-        except Exception:
-            return
+        rows = self._fetch_rows()
         if row_idx >= len(rows):
             return
         msg_id = rows[row_idx][0]
-        client.mark_read(msg_id)
+        DbClient(self.db_path).mark_read(msg_id)
         self._refresh_table()
 
     def action_delete(self) -> None:
-        """Soft-delete the selected message after confirmation."""
+        if self.tab_idx != 0:
+            return
         table = self.query_one("#message_list", DataTable)
         row_idx = table.cursor_row
         if row_idx is None:
             return
-        client = DbClient(self.db_path)
-        try:
-            rows = client.inbox(limit=100)
-        except Exception:
-            return
+        rows = self._fetch_rows()
         if row_idx >= len(rows):
             return
         msg_id = rows[row_idx][0]
 
         def on_confirm(confirmed: bool | None) -> None:
             if confirmed:
-                client.mark_deleted(msg_id)
+                DbClient(self.db_path).mark_deleted(msg_id)
                 self._refresh_table()
 
         self.app.push_screen(ConfirmDeleteModal(), on_confirm)
 
     def action_new(self) -> None:
-        """Open compose screen for a new message."""
         self.app.push_screen(ComposeScreen(db_path=self.db_path))
 
     def action_reply(self) -> None:
-        """Open compose screen pre-filled with selected sender."""
+        if self.tab_idx != 0:
+            return
         table = self.query_one("#message_list", DataTable)
         row_idx = table.cursor_row
         if row_idx is None:
             return
-        client = DbClient(self.db_path)
-        try:
-            rows = client.inbox(limit=100)
-        except Exception:
-            return
+        rows = self._fetch_rows()
         if row_idx >= len(rows):
             return
         msg_id = rows[row_idx][0]
-        msg = client.get_message(msg_id)
+        msg = DbClient(self.db_path).get_message(msg_id)
         if msg is None:
             return
-        sender = client.get_sender_by_id(msg["peer_id"])
+        sender = DbClient(self.db_path).get_sender_by_id(msg["peer_id"])
         alias = sender["alias"] if sender else None
         node_id = sender["node_id"] if sender else ""
         self.app.push_screen(
@@ -247,7 +377,6 @@ class ComposeScreen(Screen):
             status.update("! Body is empty")
             return
 
-        # Enforce Meshtastic DM byte limit (~233 protobuf max; leave 13 bytes headroom)
         body_bytes = body.encode("utf-8")
         if len(body_bytes) > 220:
             status.update(f"! Message too long: {len(body_bytes)} bytes, limit 220")
@@ -256,7 +385,6 @@ class ComposeScreen(Screen):
         client = DbClient(self.db_path)
         resolved = client.resolve_alias(alias_or_id)
         if resolved is None:
-            # Auto-create sender if it looks like a node id
             if alias_or_id.startswith("!"):
                 sender_id = client.ensure_sender(alias_or_id)
             else:

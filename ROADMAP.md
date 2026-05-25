@@ -45,8 +45,8 @@ Just DMs, SQLite, and a CLI.
 ## Phase 3 — TUI (Interactive Client)
 
 ### 3a — Heartbeat + Skeleton
-
-- [ ] **Daemon heartbeat in SQLite**
+DONE
+- [x] **Daemon heartbeat in SQLite**
   - Daemon writes `daemon_pid` + `daemon_heartbeat` (ISO timestamp) to `meta` table every `_sched_tick`
   - TUI checks heartbeat freshness; stale = "daemon offline"
   - Threshold: 30 s default, configurable
@@ -56,8 +56,8 @@ Just DMs, SQLite, and a CLI.
   - Entry point: `meshcli tui` or standalone `meshtui`
 
 ### 3b — Inbox Screen
-
-- [ ] **Split-pane layout**
+DONE
+- [x] **Split-pane layout**
   - Top: `DataTable` of messages (id, flag, alias, body preview, state, time)
   - Bottom: `Static` panel showing full body + metadata of selected row
   - Footer: `Footer` widget with key bindings
@@ -72,8 +72,8 @@ Just DMs, SQLite, and a CLI.
   - `q` quit
 
 ### 3c — Compose + Reply
-
-- [ ] **ComposeScreen modal**
+DONE
+- [x] **ComposeScreen modal**
   - `n` new message — empty To field, type alias then Tab to resolve
   - `r` reply — pre-fill To from selected message sender
   - Body: `TextArea` multi-line
@@ -82,8 +82,8 @@ Just DMs, SQLite, and a CLI.
   - `q` with unsent text → confirmation prompt; `Ctrl+C` hard quit
 
 ### 3d — Tabs + Polling
-
-- [ ] **Three tabs: Inbox / Outbox / History**
+DONE
+- [x] **Three tabs: Inbox / Outbox / History**
   - `1`/`2`/`3` switch
   - Each tab is a separate SQL query against the same DB
 - [ ] **Background DB poller**
