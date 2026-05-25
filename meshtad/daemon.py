@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -286,3 +287,13 @@ class Daemon:
                     logger.warning("DB size %.1f MB exceeds threshold %s MB", size_mb, self.cfg.size_warning_mb)
             except Exception:
                 pass
+
+        # 5. Heartbeat for TUI liveness
+        self.db.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('daemon_pid', ?)",
+            (str(os.getpid()),),
+        )
+        self.db.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('daemon_heartbeat', ?)",
+            (_iso_now(),),
+        )

@@ -12,16 +12,23 @@ requires-python = ">=3.10"
 dependencies = [
     "meshtastic>=2.7.0",
     "pyserial>=3.5",
+    "textual>=0.50",
+]
+
+[project.optional-dependencies]
+tui = [
+    "textual>=0.50",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
 ]
 
 [project.scripts]
+meshtad = "meshtad.main:main"
 meshcli = "meshtad.cli:main"
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-cov>=4.0",
-]
+meshtui = "meshtad.tui.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["meshtad"]

@@ -72,10 +72,16 @@ def main() -> int:
     p_retry = sub.add_parser("retry", help="Retry a FAILED outbound message")
     p_retry.add_argument("id", type=int, help="Message ID to retry")
 
+    p_tui = sub.add_parser("tui", help="Interactive TUI for meshtad")
+
     args = parser.parse_args()
     if not args.cmd:
         parser.print_help()
         return 1
+
+    if args.cmd == "tui":
+        from meshtad.tui.app import main as tui_main
+        return tui_main()
 
     db_path = args.db or Config.default().db_path
     db = DbClient(db_path)
