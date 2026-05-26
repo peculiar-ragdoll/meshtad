@@ -1,13 +1,20 @@
-# meshtad + meshcli
+# meshtad
 
-Generic Meshtastic store-and-forward daemon with thin SQLite clients.
+A simple meshtastic messenger for your cyberdeck, linux machine or mac.
+
+Meshtastic store-and-forward daemon `meshtad` has two thin clients:
+- `meshcli`, the command line interface (CLI) for one-shot commands
+- `meshtui`, the terminal user interface (TUI)
+
+
+![image](./docs/meshtad_inbox.png)
 
 ## Architecture
 
 ```
 ┌─────────┐  ┌─────────┐  ┌─────────┐
 │ meshcli │  │ TUI     │  │ Web UI  │
-│ (CLI)   │  │ (future)│  │ (future)│
+│ (CLI)   │  │         │  │ (future)│
 └────┬────┘  └────┬────┘  └────┬────┘
      │            │            │
      └────────────┼────────────┘
@@ -28,6 +35,19 @@ Generic Meshtastic store-and-forward daemon with thin SQLite clients.
          │  (Meshtastic)   │
          └─────────────────┘
 ```
+
+Outgoing and incoming messages to and from the net are stored in an SQLite database. 
+
+The daemon in the background manages 
+- Sending messages on the mesh, including retries and failures.
+- Persistant state logging to your database for each message. 
+- Receiving and storing incomming messages, so you can consume them whenever you want, even after a reboot.
+
+The clients let you
+- Draft messages and put them in the outbox, where the daemon sends them, and handles failed sends (no connection to target, etc) gracefully.
+- Read messages from the inbox, where the daemon put them
+- Delete messages from inbox and outbox
+- See your message history
 
 ## Message states
 
