@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, Input, Static, TextArea
+from textual.widgets import Footer, Input, Static, TextArea, Label
 
 from meshtad.db import DbClient
 from meshtad.tui.screens.modals import ConfirmDiscardModal
@@ -20,15 +20,36 @@ class ComposeScreen(Screen):
         Binding("q", "try_quit", "Quit", priority=True),
     ]
 
-    def __init__(self, db_path, to_alias: str | None = None, to_node_id: str | None = None, **kwargs):
+    def __init__(
+        self,
+        db_path,
+        to_alias: str | None = None,
+        to_node_id: str | None = None,
+        reply_to_body: str = "",
+        reply_from: str = "",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.db_path = db_path
         self.to_alias = to_alias
         self.to_node_id = to_node_id
+        self.reply_to_body = reply_to_body
+        self.reply_from = reply_from
 
     def compose(self) -> ComposeResult:
         to_value = self.to_alias or ""
-        yield Static("Compose Message", id="compose_title")
+
+        if self.reply_to_body:
+            # Show the message we're replying to
+            yield Static(
+                f"Replying to {self.reply_from}:\n{self.reply_to_body}",
+                id="reply_context",
+            )
+            yield Static("─" * 40, id="reply_sep", markup=False)
+            yield Static("Your reply:", id="compose_title")
+        else:
+            yield Static("Compose Message", id="compose_title")
+
         yield Horizontal(
             Static("To:", id="compose_to_label"),
             Input(value=to_value, placeholder="Alias or node id", id="compose_to"),
@@ -37,6 +58,10 @@ class ComposeScreen(Screen):
         yield TextArea(id="compose_body")
         yield Static("", id="compose_status")
         yield Footer()
+
+    def on_mount(self) -> None:
+        # Focus the body text area so the user can start typing immediately
+        self.query_one("#compose_body", TextArea).focus()
 
     def _has_unsent_text(self) -> bool:
         body = self.query_one("#compose_body", TextArea)

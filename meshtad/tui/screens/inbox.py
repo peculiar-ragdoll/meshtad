@@ -22,6 +22,8 @@ class InboxScreen(Screen):
         ("m", "mark_read", "Mark read"),
         ("d", "delete", "Delete"),
         ("question_mark", "help", "Help"),
+        ("left", "prev_tab", "Prev tab"),
+        ("right", "next_tab", "Next tab"),
         ("1", "tab_inbox", "Inbox"),
         ("2", "tab_outbox", "Outbox"),
         ("3", "tab_history", "History"),
@@ -118,7 +120,7 @@ class InboxScreen(Screen):
     # Rendering
     # ------------------------------------------------------------------
 
-    def _refresh_table(self) -> None:
+    def _refresh_table(self, cursor_row: int | None = None) -> None:
         table = self.query_one("#message_list", DataTable)
         table.clear()
         rows = self._fetch_rows()
@@ -128,8 +130,10 @@ class InboxScreen(Screen):
             return
         for raw in rows:
             table.add_row(*self._row_data(raw))
-        table.move_cursor(row=0)
-        self._update_preview_from_index(0)
+        idx = cursor_row if cursor_row is not None else 0
+        idx = max(0, min(idx, len(rows) - 1))
+        table.move_cursor(row=idx)
+        self._update_preview_from_index(idx)
 
     def _update_preview_from_index(self, idx: int) -> None:
         rows = self._fetch_rows()
@@ -217,6 +221,12 @@ class InboxScreen(Screen):
     def action_tab_history(self) -> None:
         self._switch_tab(2)
 
+    def action_prev_tab(self) -> None:
+        self._switch_tab((self.tab_idx - 1) % 3)
+
+    def action_next_tab(self) -> None:
+        self._switch_tab((self.tab_idx + 1) % 3)
+
     def _switch_tab(self, idx: int) -> None:
         if self.tab_idx == idx:
             return
@@ -237,10 +247,10 @@ class InboxScreen(Screen):
             return
         msg_id = rows[row_idx][0]
         DbClient(self.db_path).mark_read(msg_id)
-        self._refresh_table()
+        self._refresh_table(cursor_row=row_idx)
 
     def action_delete(self) -> None:
-        if self.tab_idx != 0:
+        if self.tab_idx == 2:  # history is read-only
             return
         table = self.query_one("#message_list", DataTable)
         row_idx = table.cursor_row
@@ -254,7 +264,7 @@ class InboxScreen(Screen):
         def on_confirm(confirmed: bool | None) -> None:
             if confirmed:
                 DbClient(self.db_path).mark_deleted(msg_id)
-                self._refresh_table()
+                self._refresh_table(cursor_row=row_idx)
 
         self.app.push_screen(ConfirmDeleteModal(), on_confirm)
 
@@ -278,6 +288,13 @@ class InboxScreen(Screen):
         sender = DbClient(self.db_path).get_sender_by_id(msg["peer_id"])
         alias = sender["alias"] if sender else None
         node_id = sender["node_id"] if sender else ""
+        reply_from = alias or node_id or "unknown"
         self.app.push_screen(
-            ComposeScreen(db_path=self.db_path, to_alias=alias, to_node_id=node_id)
+            ComposeScreen(
+                db_path=self.db_path,
+                to_alias=alias,
+                to_node_id=node_id,
+                reply_to_body=msg["body"],
+                reply_from=reply_from,
+            )
         )
