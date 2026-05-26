@@ -1,73 +1,15 @@
-"""Textual screens for meshtad TUI."""
+"""Inbox screen with tabbed message viewer."""
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen, Screen
-from textual.widgets import DataTable, Footer, Input, Label, Static, TextArea
+from textual.containers import Vertical
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Label, Static
 
 from meshtad.db import DbClient
 from meshtad.tui.heartbeat import is_daemon_online
-
-
-class ConfirmDeleteModal(ModalScreen[bool]):
-    """Y/N confirmation modal."""
-
-    BINDINGS = [
-        ("y", "confirm", "Yes"),
-        ("n", "dismiss", "No"),
-    ]
-
-    def compose(self) -> ComposeResult:
-        yield Static("Delete this message? [y/n]", id="question")
-
-    def action_confirm(self) -> None:
-        self.dismiss(True)
-
-    def action_dismiss(self) -> None:
-        self.dismiss(False)
-
-
-class ConfirmDiscardModal(ModalScreen[bool]):
-    """Y/N confirmation for discarding unsent draft."""
-
-    BINDINGS = [
-        ("y", "confirm", "Yes"),
-        ("n", "dismiss", "No"),
-    ]
-
-    def compose(self) -> ComposeResult:
-        yield Static("Discard unsent message? [y/n]", id="question")
-
-    def action_confirm(self) -> None:
-        self.dismiss(True)
-
-    def action_dismiss(self) -> None:
-        self.dismiss(False)
-
-
-class HelpModal(ModalScreen[None]):
-    """Modal showing all available key bindings for the current screen."""
-
-    BINDINGS = [
-        ("q", "close", "Close"),
-        ("escape", "close", "Close"),
-    ]
-
-    def __init__(self, bindings: list[tuple[str, str]], **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._help_bindings = bindings
-
-    def compose(self) -> ComposeResult:
-        lines = ["Key Bindings", "",]
-        for key, desc in self._help_bindings:
-            lines.append(f"  {key:12}  {desc}")
-        yield Static("\n".join(lines), id="help_text", markup=False)
-        yield Footer()
-
-    def action_close(self) -> None:
-        self.dismiss(None)
+from meshtad.tui.screens.compose import ComposeScreen
+from meshtad.tui.screens.modals import ConfirmDeleteModal, HelpModal
 
 
 class InboxScreen(Screen):
@@ -339,83 +281,3 @@ class InboxScreen(Screen):
         self.app.push_screen(
             ComposeScreen(db_path=self.db_path, to_alias=alias, to_node_id=node_id)
         )
-
-
-class ComposeScreen(Screen):
-    """Screen for composing and queueing an outbound DM."""
-
-    BINDINGS = [
-        Binding("ctrl+s", "send", "Send", priority=True),
-        Binding("ctrl+c", "cancel", "Cancel", priority=True),
-        Binding("q", "try_quit", "Quit", priority=True),
-    ]
-
-    def __init__(self, db_path, to_alias: str | None = None, to_node_id: str | None = None, **kwargs):
-        super().__init__(**kwargs)
-        self.db_path = db_path
-        self.to_alias = to_alias
-        self.to_node_id = to_node_id
-
-    def compose(self) -> ComposeResult:
-        to_value = self.to_alias or ""
-        yield Static("Compose Message", id="compose_title")
-        yield Horizontal(
-            Static("To:", id="compose_to_label"),
-            Input(value=to_value, placeholder="Alias or node id", id="compose_to"),
-            id="compose_to_row",
-        )
-        yield TextArea(id="compose_body")
-        yield Static("", id="compose_status")
-        yield Footer()
-
-    def _has_unsent_text(self) -> bool:
-        body = self.query_one("#compose_body", TextArea)
-        to_inp = self.query_one("#compose_to", Input)
-        return bool(body.text.strip() or to_inp.value.strip())
-
-    def action_try_quit(self) -> None:
-        if self._has_unsent_text():
-            def on_confirm(confirmed: bool | None) -> None:
-                if confirmed:
-                    self.app.pop_screen()
-            self.app.push_screen(ConfirmDiscardModal(), on_confirm)
-        else:
-            self.app.pop_screen()
-
-    def action_cancel(self) -> None:
-        self.app.pop_screen()
-
-    def action_send(self) -> None:
-        to_inp = self.query_one("#compose_to", Input)
-        body_widget = self.query_one("#compose_body", TextArea)
-        status = self.query_one("#compose_status", Static)
-
-        alias_or_id = to_inp.value.strip()
-        body = body_widget.text.strip()
-
-        if not alias_or_id:
-            status.update("! To field is required")
-            return
-        if not body:
-            status.update("! Body is empty")
-            return
-
-        body_bytes = body.encode("utf-8")
-        if len(body_bytes) > 220:
-            status.update(f"! Message too long: {len(body_bytes)} bytes, limit 220")
-            return
-
-        client = DbClient(self.db_path)
-        resolved = client.resolve_alias(alias_or_id)
-        if resolved is None:
-            if alias_or_id.startswith("!"):
-                sender_id = client.ensure_sender(alias_or_id)
-            else:
-                status.update(f"! Unknown alias: '{alias_or_id}'")
-                return
-        else:
-            sender_id, _ = resolved
-
-        msg_id = client.enqueue_outbound(sender_id, body)
-        status.update(f"Queued message #{msg_id}")
-        self.app.pop_screen()

@@ -50,7 +50,7 @@ async def test_default_tab_is_inbox(tmp_db, seeded_db):
     app = MeshtuiApp(db_path=tmp_db)
     async with app.run_test() as pilot:
         await pilot.pause()
-        screen = app.query_one("InboxScreen")
+        screen = app.screen
         assert screen.tab_idx == 0
 
 
@@ -64,7 +64,7 @@ async def test_tab_2_switches_to_outbox(tmp_db, seeded_db):
         await pilot.pause()
         await pilot.press("2")
         await pilot.pause()
-        screen = app.query_one("InboxScreen")
+        screen = app.screen
         assert screen.tab_idx == 1
         # Outbox should show the outbound row
         table = app.query_one("#message_list")
@@ -81,7 +81,7 @@ async def test_tab_3_switches_to_history(tmp_db, seeded_db):
         await pilot.pause()
         await pilot.press("3")
         await pilot.pause()
-        screen = app.query_one("InboxScreen")
+        screen = app.screen
         assert screen.tab_idx == 2
         # History should show both inbound + outbound (2 rows)
         table = app.query_one("#message_list")
@@ -100,7 +100,7 @@ async def test_tab_1_returns_to_inbox(tmp_db, seeded_db):
         await pilot.pause()
         await pilot.press("1")
         await pilot.pause()
-        screen = app.query_one("InboxScreen")
+        screen = app.screen
         assert screen.tab_idx == 0
 
 
@@ -160,7 +160,7 @@ async def test_poller_refreshes_on_new_inbound(tmp_db, db_thread):
         client.insert_inbound(sid, "late arrival")
 
         # Force a poll cycle (poller interval is long in test; trigger manually)
-        screen = app.query_one("InboxScreen")
+        screen = app.screen
         screen._poll_db()
         await pilot.pause()
 
@@ -182,7 +182,7 @@ async def test_poller_updates_unread_count(tmp_db, db_thread):
         sid = client.ensure_sender("!deadbeef", alias="node")
         client.insert_inbound(sid, "unread")
 
-        screen = app.query_one("InboxScreen")
+        screen = app.screen
         screen._poll_db()
         await pilot.pause()
 

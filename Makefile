@@ -1,4 +1,6 @@
-.PHONY: test test-cov setup install run clean lint typecheck help
+.PHONY: test test-cov setup install run clean lint typecheck tuitest dbreset help
+
+TUI_TEST_DB := /tmp/meshtad_tuitest.db
 
 PY := $(shell which python3 2>/dev/null || echo python3)
 VENV_PATH := .venv
@@ -48,6 +50,16 @@ test-cov: install
 run: install
 	$(VENV_PYTHON) -m meshtad
 
+tuitest: install
+	@echo "Populating TUI test database..."
+	$(VENV_PYTHON) scripts/mockdata.py --db $(TUI_TEST_DB)
+	@echo "Launching meshtui (quit with q or Ctrl+C)..."
+	$(VENV_PYTHON) -m meshtad.tui.app --db $(TUI_TEST_DB)
+
+dbreset:
+	@echo "Removing TUI test database $(TUI_TEST_DB)"
+	@rm -f $(TUI_TEST_DB)
+
 clean:
 	rm -rf $(VENV_PATH) __pycache__ .pytest_cache .coverage
 	find . -name '*.pyc' -delete
@@ -68,6 +80,8 @@ help:
 	@echo "  make setup      — create venv + install editable deps"
 	@echo "  make install    — reinstall editable deps"
 	@echo "  make run        — start the daemon"
+	@echo "  make tuitest    — populate mock DB + launch TUI"
+	@echo "  make dbreset    — remove the mock TUI test database"
 	@echo "  make clean      — remove venv, caches, pyc files"
 	@echo "  make lint       — run ruff linter"
 	@echo "  make typecheck  — run mypy type checker"

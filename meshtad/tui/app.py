@@ -1,24 +1,16 @@
 """Textual TUI app for meshtad."""
 from __future__ import annotations
 
-import os
 import pathlib
 
-from textual.app import App, ComposeResult
+from textual.app import App
+from textual.screen import Screen
 
-from meshtad.config import Config
 from meshtad.tui.screens import InboxScreen
 
 
 class MeshtuiApp(App):
     """Main Textual application."""
-
-    CSS = """
-    Screen { align: center middle; }
-    #message_list { height: 60%; }
-    #detail_pane { height: 40%; border: solid green; }
-    #preview { padding: 1; }
-    """
 
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -29,8 +21,8 @@ class MeshtuiApp(App):
         self.db_path = db_path or pathlib.Path.home() / ".local" / "share" / "meshtad" / "meshtad.db"
         super().__init__()
 
-    def compose(self) -> ComposeResult:
-        yield InboxScreen(db_path=self.db_path)
+    def get_default_screen(self) -> Screen:
+        return InboxScreen(db_path=self.db_path)
 
     def action_quit(self) -> None:
         self.exit()
@@ -43,3 +35,7 @@ def main() -> None:
     args = parser.parse_args()
     app = MeshtuiApp(db_path=args.db)
     app.run()
+
+
+if __name__ == "__main__":
+    main()
