@@ -1,4 +1,4 @@
-.PHONY: test test-cov setup install run clean lint typecheck tuitest dbreset help
+.PHONY: test test-cov setup install run clean lint typecheck tuitest dbreset venv help
 
 TUI_TEST_DB := /tmp/meshtad_tuitest.db
 
@@ -8,29 +8,32 @@ VENV_PATH := .venv
 # Resolve the venv's python binary directly. Detect and recover a broken
 # venv (e.g., created in Docker with a different interpreter path).
 VENV_PYTHON := $(VENV_PATH)/bin/python
-VENV_PIP := $(VENV_PATH)/bin/pip
 
-# Check if the venv's interpreter is actually executable
+# Is the venv's interpreter present AND actually runnable on this host?
+# "broken" covers both missing and wrong-architecture (e.g. a Docker-built venv
+# whose binary cannot exec on the macOS host).
 VENV_PYTHON_OK := $(shell test -x $(VENV_PYTHON) && $(VENV_PYTHON) --version >/dev/null 2>&1 && echo ok || echo broken)
 
 # ---------------------------------------------------------------------------
-# Virtualenv bootstrap (recreate if broken)
+# Virtualenv bootstrap (create if missing, recreate if broken)
 # ---------------------------------------------------------------------------
-$(VENV_PYTHON):
+# `venv` is PHONY so it is re-checked on every run. A file target on
+# $(VENV_PYTHON) would be considered up-to-date whenever the file merely exists
+# — including when it is a wrong-arch interpreter — so make would skip the
+# recreate recipe, which is the exact failure we need to recover from.
+venv:
 ifeq ($(VENV_PYTHON_OK),broken)
-	@echo "Venv interpreter is broken, recreating..."
+	@echo "Venv interpreter missing or broken, recreating..."
 	@rm -rf $(VENV_PATH)
-else
-	@echo "Creating venv..."
-endif
 	$(PY) -m venv $(VENV_PATH)
 	@echo "Venv created at $(VENV_PATH)"
-
-$(VENV_PIP): $(VENV_PYTHON)
+else
+	@echo "Venv OK ($(VENV_PYTHON))"
+endif
 
 setup: install
 
-install: $(VENV_PIP)
+install: venv
 	$(VENV_PYTHON) -m pip install -e ".[dev]"
 
 # ---------------------------------------------------------------------------

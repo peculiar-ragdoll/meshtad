@@ -64,14 +64,16 @@ pip install -e .
 ## Run the daemon
 
 ```bash
-meshtad                    # auto-detect serial port
+meshtad                                       # auto-detect serial port
 meshtad --port /dev/cu.usbmodem1234
+meshtad --config /path/to/config.toml         # default: ~/.config/meshtad/config.toml
+meshtad --db /path/to/meshtad.db              # default: ~/.local/share/meshtad/meshtad.db
 ```
 
 Or:
 
 ```bash
-python -m meshtad.main
+python -m meshtad
 ```
 
 ## meshcli commands
@@ -98,26 +100,24 @@ meshcli vacuum                             # compact DB
 `~/.config/meshtad/config.toml`:
 
 ```toml
-[daemon]
-db_path = "~/.local/share/meshtad/meshtad.db"
-
-[retry]
+[meshtad]
+log_level = "INFO"
+redact_bodies = true                  # log "<N chars redacted>" instead of bodies
+serial_port = "/dev/cu.usbmodem1234"  # omit for auto-detect
 max_retries = 5
-initial_interval_s = 5
-max_interval_s = 300
-exponential_base = 2
-
-[ack]
-timeout_s = 30
+retry_initial_s = 5.0                 # first backoff delay
+retry_max_s = 300.0                   # backoff ceiling
+retry_base = 2.0                      # exponential base
+ack_timeout_s = 30.0
+size_warning_enabled = true
+size_warning_mb = 100
 
 [auto_delete]
-global_after_s = null   # null = never
+# global_s = 86400                    # delete SEEN/sent msgs this many seconds later; omit = never
 
-[size_warning]
-enabled = true
-threshold_mb = 100
-
-[logging]
-level = "INFO"
-redact_bodies = true
+[tui]
+poll_interval_s = 2.0
+theme = "dark"
 ```
+
+Every key is optional; omitted keys keep their defaults. The database path is **not** a config key — it defaults to `~/.local/share/meshtad/meshtad.db` and is overridden with the `--db` flag. The config file is reloaded automatically when its mtime changes, so edits take effect without restarting the daemon.

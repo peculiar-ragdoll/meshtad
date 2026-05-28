@@ -28,6 +28,7 @@ class Daemon:
         self._rx_thread: threading.Thread | None = None
         self._tx_thread: threading.Thread | None = None
         self._sched_thread: threading.Thread | None = None
+        self._config_watcher = None  # set by the entry point to enable live config reload
 
     def run(self) -> None:
         logging.basicConfig(
@@ -225,9 +226,14 @@ class Daemon:
     def _sched_loop(self) -> None:
         while not self._shutdown.is_set():
             # Live config reload
-            if hasattr(self, "_config_watcher") and self._config_watcher:
+            if self._config_watcher:
                 new_cfg = self._config_watcher.reload_if_changed()
                 if new_cfg is not None:
+                    # db_path and serial_port are startup-bound: DbThread and Radio are
+                    # already constructed from the original values, so a live reload must
+                    # not repoint them. Carry the runtime values onto the new config.
+                    new_cfg.db_path = self.cfg.db_path
+                    new_cfg.serial_port = self.cfg.serial_port
                     self.cfg = new_cfg
                     logger.info("Config reloaded from %s", self._config_watcher.path)
             self._sched_tick()
