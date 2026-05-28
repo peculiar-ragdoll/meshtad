@@ -189,8 +189,16 @@ class Daemon:
                 self.cfg.retry_max_s,
             )
             next_at = _iso_now(offset_s=delay)
+            # Reset to QUEUED so the TX drain actually retransmits after next_attempt_at.
+            # This path is reached both from a radio-handoff failure (already QUEUED) and
+            # from an ACK timeout / NAK (state was SENT) — in the latter case, without
+            # flipping back to QUEUED the message would never be resent and would just
+            # tick retry_count to FAILED. Clearing sent_at + meshtastic_packet_id removes
+            # it from the scheduler's SENT-timeout scan and stops a late ACK for the old
+            # packet id from matching the resend.
             self.db.execute(
-                "UPDATE messages SET retry_count=retry_count+1, next_attempt_at=?, error=? WHERE id=?",
+                "UPDATE messages SET state='QUEUED', retry_count=retry_count+1, "
+                "next_attempt_at=?, sent_at=NULL, meshtastic_packet_id=NULL, error=? WHERE id=?",
                 (next_at, error, msg_id),
             )
             logger.info("Message %s retry %s scheduled at %s (+%.0fs)", msg_id, retry_count + 1, next_at, delay)

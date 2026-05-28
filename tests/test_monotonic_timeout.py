@@ -83,15 +83,19 @@ class TestMonotonicTimeout:
 
         d._sched_tick()
 
-        # _handle_send_failure increments retry_count and sets error,
-        # but does NOT change state for non-final failures (matches existing design:
-        # state stays SENT until max_retries reached).
+        # A non-final ACK timeout requeues the message (SENT -> QUEUED) so the TX drain
+        # resends it after next_attempt_at, and clears sent_at / packet_id so it leaves
+        # the scheduler's SENT-timeout scan and a stale ACK can't match the resend.
         rows = db_thread.execute(
-            "SELECT state, retry_count, error FROM messages WHERE meshtastic_packet_id=777"
+            "SELECT state, retry_count, error, next_attempt_at, sent_at, meshtastic_packet_id "
+            "FROM messages WHERE id=1"
         )
-        assert rows[0]["state"] == "SENT"
+        assert rows[0]["state"] == "QUEUED"
         assert rows[0]["retry_count"] == 1
         assert "timeout" in rows[0]["error"]
+        assert rows[0]["next_attempt_at"] is not None
+        assert rows[0]["sent_at"] is None
+        assert rows[0]["meshtastic_packet_id"] is None
 
     def test_no_false_timeout_on_monotonic_boundary(self, tmp_db, db_thread, monkeypatch):
         """If mono has NOT crossed the threshold, no timeout should fire

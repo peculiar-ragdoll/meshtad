@@ -237,8 +237,8 @@ class TestAckNak:
         rows = db_thread.execute("SELECT state FROM messages WHERE meshtastic_packet_id=?", (pkt_id,))
         assert rows[0]["state"] == "ACKED"
 
-    def test_nak_retries_then_fails(self, tmp_db, db_thread):
-        d = _daemon_with_mock(tmp_db, max_retries=1, retry_initial_s=0.01)
+    def test_nak_requeues_and_resends(self, tmp_db, db_thread):
+        d = _daemon_with_mock(tmp_db, max_retries=2, retry_initial_s=0.0)
         d.db = db_thread
         d.radio.connect()
         sid = db_thread.execute("INSERT INTO senders (node_id) VALUES ('!dest9876')")
@@ -247,17 +247,55 @@ class TestAckNak:
             ("out", sid, "hello", "QUEUED"),
         )
         d._tx_drain_once()
-        rows = db_thread.execute("SELECT meshtastic_packet_id FROM messages WHERE direction='out'")
+        rows = db_thread.execute("SELECT id, meshtastic_packet_id FROM messages WHERE direction='out'")
+        msg_id = rows[0]["id"]
         pkt_id = rows[0]["meshtastic_packet_id"]
+        # NAK requeues the message (does not leave it stuck in SENT)
         d.radio.inject_routing({
             "requestId": pkt_id,
             "decoded": {"routing": {"errorReason": "NO_CHANNEL"}},
         })
         time.sleep(0.2)
-        # NAK increments retry to 1 and re-queues; next drain will hit max and fail
+        rows = db_thread.execute(
+            "SELECT state, retry_count, error, meshtastic_packet_id FROM messages WHERE id=?", (msg_id,)
+        )
+        assert rows[0]["state"] == "QUEUED"
+        assert rows[0]["retry_count"] == 1
+        assert "NAK" in rows[0]["error"]
+        assert rows[0]["meshtastic_packet_id"] is None
+        # The next drain actually puts it back on the air
+        sent_before = len(d.radio._sent)
         d._tx_drain_once()
-        rows = db_thread.execute("SELECT state, retry_count, error FROM messages WHERE meshtastic_packet_id=?", (pkt_id,))
-        assert rows[0]["retry_count"] == 1  # NAK incremented retry_count, then drained again
+        assert len(d.radio._sent) == sent_before + 1
+        rows = db_thread.execute("SELECT state FROM messages WHERE id=?", (msg_id,))
+        assert rows[0]["state"] == "SENT"
+
+    def test_nak_at_max_retries_fails(self, tmp_db, db_thread):
+        d = _daemon_with_mock(tmp_db, max_retries=1, retry_initial_s=0.0)
+        d.db = db_thread
+        d.radio.connect()
+        sid = db_thread.execute("INSERT INTO senders (node_id) VALUES ('!dest9876')")
+        db_thread.execute(
+            "INSERT INTO messages (direction, peer_id, body, state) VALUES (?,?,?,?)",
+            ("out", sid, "hello", "QUEUED"),
+        )
+
+        def nak_current():
+            row = db_thread.execute(
+                "SELECT meshtastic_packet_id FROM messages WHERE direction='out'"
+            )[0]
+            d.radio.inject_routing({
+                "requestId": row["meshtastic_packet_id"],
+                "decoded": {"routing": {"errorReason": "NO_CHANNEL"}},
+            })
+            time.sleep(0.1)
+
+        d._tx_drain_once()   # send #1
+        nak_current()        # retry_count 0 -> 1, requeued
+        d._tx_drain_once()   # send #2
+        nak_current()        # retry_count 1 >= max_retries 1 -> FAILED
+        rows = db_thread.execute("SELECT state, error FROM messages WHERE direction='out'")
+        assert rows[0]["state"] == "FAILED"
         assert "NAK" in rows[0]["error"]
 
     def test_reconnect_without_crash(self, tmp_db, db_thread):
@@ -286,9 +324,38 @@ class TestScheduler:
             (sid, "hello", "SENT", "2024-01-01T00:00:00Z", 0, 777),
         )
         d._sched_tick()
-        rows = db_thread.execute("SELECT state, error, retry_count FROM messages WHERE meshtastic_packet_id=777")
+        rows = db_thread.execute("SELECT state, error, retry_count, next_attempt_at FROM messages WHERE direction='out'")
+        assert rows[0]["state"] == "QUEUED"  # requeued for resend (was SENT)
         assert rows[0]["error"] == "ack_timeout"
         assert rows[0]["retry_count"] == 1
+        assert rows[0]["next_attempt_at"] is not None
+
+    def test_ack_timeout_requeues_then_resends(self, tmp_db, db_thread):
+        """Regression: an unacked SENT message must be retransmitted, not just
+        counted toward FAILED."""
+        d = _daemon_with_mock(tmp_db, ack_timeout_s=0.1, retry_initial_s=0.0, max_retries=5)
+        d.db = db_thread
+        d.radio.connect()
+        sid = db_thread.execute("INSERT INTO senders (node_id) VALUES ('!destAAAA')")
+        db_thread.execute(
+            "INSERT INTO messages (direction, peer_id, body, state) VALUES ('out',?,?,?)",
+            (sid, "hello", "QUEUED"),
+        )
+        d._tx_drain_once()  # QUEUED -> SENT, inflight registered
+        assert len(d.radio._sent) == 1
+        rows = db_thread.execute("SELECT meshtastic_packet_id FROM messages WHERE direction='out'")
+        pkt = rows[0]["meshtastic_packet_id"]
+        # Age the inflight entry past the timeout
+        with d._inflight_lock:
+            d._inflight[pkt]["sent_at_mono"] = time.monotonic() - 999.0
+        d._sched_tick()  # timeout -> requeue
+        rows = db_thread.execute("SELECT state FROM messages WHERE direction='out'")
+        assert rows[0]["state"] == "QUEUED"
+        time.sleep(0.01)
+        d._tx_drain_once()  # actually retransmit
+        assert len(d.radio._sent) == 2
+        rows = db_thread.execute("SELECT state FROM messages WHERE direction='out'")
+        assert rows[0]["state"] == "SENT"
 
     def test_auto_delete_execution(self, tmp_db, db_thread):
         d = _daemon_with_mock(tmp_db)
