@@ -45,6 +45,9 @@ class Daemon:
 
         if not self.radio.connect():
             logger.error("Initial radio connect failed; will retry in background")
+        else:
+            logger.info("Radio connected; port=%s local_id=%s",
+                        self.radio.port or "(auto)", self.radio.local_node_id)
 
         self._rx_thread = threading.Thread(target=self._rx_loop, name="rx", daemon=True)
         self._tx_thread = threading.Thread(target=self._tx_loop, name="tx", daemon=True)
@@ -52,6 +55,7 @@ class Daemon:
         self._rx_thread.start()
         self._tx_thread.start()
         self._sched_thread.start()
+        logger.info("Daemon ready — RX/TX/scheduler threads running")
 
         try:
             while not self._shutdown.is_set():
