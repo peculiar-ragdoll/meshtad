@@ -7,6 +7,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Input, Static, TextArea, Label
 
+from meshtad.config import MAX_PAYLOAD_BYTES
 from meshtad.db import DbClient
 from meshtad.tui.screens.modals import ConfirmDiscardModal
 
@@ -96,8 +97,8 @@ class ComposeScreen(Screen):
             return
 
         body_bytes = body.encode("utf-8")
-        if len(body_bytes) > 220:
-            status.update(f"! Message too long: {len(body_bytes)} bytes, limit 220")
+        if len(body_bytes) > MAX_PAYLOAD_BYTES:
+            status.update(f"! Message too long: {len(body_bytes)} bytes, limit {MAX_PAYLOAD_BYTES}")
             return
 
         client = DbClient(self.db_path)

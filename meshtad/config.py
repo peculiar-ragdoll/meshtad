@@ -9,7 +9,11 @@ from typing import Optional
 logger = logging.getLogger("meshtad.config")
 
 DEFAULT_DB_NAME = "meshtad.db"
-MAX_PAYLOAD_BYTES = 228  # conservative; Meshtastic Constants.DATA_PAYLOAD_LEN = 233
+# Meshtastic's Constants.DATA_PAYLOAD_LEN is 233, but after Data-protobuf framing
+# and channel encryption the dongle firmware rejects text payloads above ~220 bytes
+# locally with TOO_LARGE before anything is transmitted. Cap at the empirically
+# verified firmware ceiling, not the inner protobuf field size.
+MAX_PAYLOAD_BYTES = 220
 
 
 def _load_toml(path: pathlib.Path) -> dict:

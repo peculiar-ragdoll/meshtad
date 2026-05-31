@@ -21,8 +21,8 @@ class TestConfig:
         assert cfg.db_path == pathlib.Path("/tmp/foo") / DEFAULT_DB_NAME
 
     def test_max_payload_constant(self):
-        """MAX_PAYLOAD_BYTES is the agreed conservative limit."""
-        assert MAX_PAYLOAD_BYTES == 228
+        """MAX_PAYLOAD_BYTES matches the firmware text-payload ceiling."""
+        assert MAX_PAYLOAD_BYTES == 220
 
     def test_config_is_mutable_for_testing(self):
         """Config is not frozen so tests/daemon can tweak fields."""

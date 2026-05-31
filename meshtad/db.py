@@ -313,6 +313,12 @@ class DbClient:
             conn.execute("INSERT INTO control_queue (action, params) VALUES (?,?)", (action, params))
             conn.commit()
 
+    def max_message_id(self) -> int:
+        """Highest message id, or 0 if empty. Used by the TUI to cheaply detect changes."""
+        with contextlib.closing(self._conn()) as conn:
+            row = conn.execute("SELECT MAX(id) FROM messages").fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
+
     def message_counts(self) -> list[tuple[str, int]]:
         with contextlib.closing(self._conn()) as conn:
             return conn.execute("SELECT state, COUNT(*) FROM messages GROUP BY state").fetchall()

@@ -118,6 +118,13 @@ class TestDbClient:
         t.stop()
         return DbClient(tmp_db)
 
+    def test_max_message_id(self, client):
+        """max_message_id returns 0 when empty and the highest id otherwise."""
+        assert client.max_message_id() == 0
+        sid = client.ensure_sender("!aabbccdd")
+        mid = client.enqueue_outbound(sid, "hi")
+        assert client.max_message_id() == mid
+
     def test_ensure_sender_creates_and_idempotent(self, client):
         """ensure_sender creates on first call, returns same id on second."""
         sid1 = client.ensure_sender("!aabbccdd")

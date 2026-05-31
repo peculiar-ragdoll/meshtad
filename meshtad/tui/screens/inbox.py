@@ -140,7 +140,6 @@ class InboxScreen(Screen):
         if idx < 0 or idx >= len(rows):
             return
         raw = rows[idx]
-        client = DbClient(self.db_path)
         if self.tab_idx == 0:
             _, alias, node_id, body, state, ts = raw
             name = alias or node_id
@@ -192,10 +191,8 @@ class InboxScreen(Screen):
 
     def _poll_db(self) -> None:
         """Background poll: refresh table and status if DB has changed."""
-        client = DbClient(self.db_path)
         try:
-            result = client._conn().execute("SELECT MAX(id) FROM messages").fetchone()
-            max_id = result[0] or 0
+            max_id = DbClient(self.db_path).max_message_id()
         except Exception:
             return
         if max_id != self._max_id_seen:
