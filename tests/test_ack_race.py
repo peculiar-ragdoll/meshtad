@@ -47,8 +47,7 @@ class _SyncAckRadio:
         if cb:
             # This runs BEFORE send_text returns in the real lib
             cb({
-                "requestId": pkt_id,
-                "decoded": {"routing": {"errorReason": "NONE"}},
+                "decoded": {"requestId": pkt_id, "routing": {"errorReason": "NONE"}},
             }, None)
 
         self._sent.append((dest, text))

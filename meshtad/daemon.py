@@ -108,10 +108,11 @@ class Daemon:
             routing = decoded.get("routing", {})
             if not routing:
                 return
-            request_id = packet.get("requestId")
+            # requestId is inside the decoded protobuf dict, not at the packet root
+            request_id = decoded.get("requestId")
             if request_id is None:
                 return
-            error_reason = routing.get("errorReason", "")
+            error_reason = routing.get("errorReason", "NONE")
             self._handle_ack_nak(request_id, error_reason)
         except Exception:
             logger.exception("Routing handler error")

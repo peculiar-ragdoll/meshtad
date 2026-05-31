@@ -230,8 +230,7 @@ class TestAckNak:
         pkt_id = rows[0]["meshtastic_packet_id"]
         # Inject ACK with the real packet ID
         d.radio.inject_routing({
-            "requestId": pkt_id,
-            "decoded": {"routing": {"errorReason": "NONE"}},
+            "decoded": {"requestId": pkt_id, "routing": {"errorReason": "NONE"}},
         })
         time.sleep(0.2)
         rows = db_thread.execute("SELECT state FROM messages WHERE meshtastic_packet_id=?", (pkt_id,))
@@ -252,8 +251,7 @@ class TestAckNak:
         pkt_id = rows[0]["meshtastic_packet_id"]
         # NAK requeues the message (does not leave it stuck in SENT)
         d.radio.inject_routing({
-            "requestId": pkt_id,
-            "decoded": {"routing": {"errorReason": "NO_CHANNEL"}},
+            "decoded": {"requestId": pkt_id, "routing": {"errorReason": "NO_CHANNEL"}},
         })
         time.sleep(0.2)
         rows = db_thread.execute(
@@ -420,8 +418,7 @@ class TestEndToEnd:
         assert rows[0]["state"] == "SENT"
         pkt_id = rows[0]["meshtastic_packet_id"]
         d.radio.inject_routing({
-            "requestId": pkt_id,
-            "decoded": {"routing": {"errorReason": "NONE"}},
+            "decoded": {"requestId": pkt_id, "routing": {"errorReason": "NONE"}},
         })
         time.sleep(0.2)
         rows = db_thread.execute("SELECT state FROM messages WHERE id=?", (mid,))
