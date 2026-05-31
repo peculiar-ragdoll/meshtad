@@ -9,7 +9,7 @@ from textual.widgets import DataTable, Footer, Label, Static
 from meshtad.db import DbClient
 from meshtad.tui.heartbeat import is_daemon_online
 from meshtad.tui.screens.compose import ComposeScreen
-from meshtad.tui.screens.modals import ConfirmDeleteModal, HelpModal
+from meshtad.tui.screens.modals import ConfirmDeleteModal, HelpModal, SetAliasModal
 
 
 class InboxScreen(Screen):
@@ -21,6 +21,7 @@ class InboxScreen(Screen):
         ("n", "new", "New"),
         ("m", "mark_read", "Mark read"),
         ("d", "delete", "Delete"),
+        ("a", "set_alias", "Set alias"),
         ("question_mark", "help", "Help"),
         ("left", "prev_tab", "Prev tab"),
         ("right", "next_tab", "Next tab"),
@@ -264,6 +265,38 @@ class InboxScreen(Screen):
                 self._refresh_table(cursor_row=row_idx)
 
         self.app.push_screen(ConfirmDeleteModal(), on_confirm)
+
+    def action_set_alias(self) -> None:
+        if self.tab_idx != 0:
+            return
+        table = self.query_one("#message_list", DataTable)
+        row_idx = table.cursor_row
+        if row_idx is None:
+            return
+        rows = self._fetch_rows()
+        if row_idx >= len(rows):
+            return
+        msg_id = rows[row_idx][0]
+        msg = DbClient(self.db_path).get_message(msg_id)
+        if msg is None:
+            return
+        sender = DbClient(self.db_path).get_sender_by_id(msg["peer_id"])
+        node_id = sender["node_id"] if sender else ""
+        existing_alias = sender["alias"] if sender else None
+
+        def on_confirm(alias: str | None) -> None:
+            if alias is None or not alias.strip():
+                return  # dismissed or empty
+            alias = alias.strip()
+            client = DbClient(self.db_path)
+            sender_id = client.ensure_sender(node_id)
+            client.update_sender(sender_id, alias=alias)
+            self._refresh_table(cursor_row=row_idx)
+
+        self.app.push_screen(
+            SetAliasModal(node_id=node_id, existing_alias=existing_alias),
+            on_confirm,
+        )
 
     def action_new(self) -> None:
         self.app.push_screen(ComposeScreen(db_path=self.db_path))

@@ -2,9 +2,50 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, Input, Static
+
+
+class SetAliasModal(ModalScreen[str | None]):
+    """Modal for setting a sender alias."""
+
+    BINDINGS = [
+        ("escape", "dismiss", "Cancel"),
+    ]
+
+    def __init__(
+        self, node_id: str, existing_alias: str | None = None, **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.node_id = node_id
+        self.existing_alias = existing_alias
+
+    def compose(self) -> ComposeResult:
+        hint = f" (current: {self.existing_alias})" if self.existing_alias else ""
+        yield Vertical(
+            Static(f"Set alias for {self.node_id}{hint}"),
+            Horizontal(
+                Static("Alias:"),
+                Input(
+                    value=self.existing_alias or "",
+                    placeholder="e.g. emma, dad, t-deck",
+                    id="alias_input",
+                ),
+            ),
+            Static("[b]Enter[/] to save, [b]Esc[/] to cancel", id="hint"),
+            id="alias_modal",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#alias_input", Input).focus()
+
+    def on_key_enter(self) -> None:
+        input_widget = self.query_one("#alias_input", Input)
+        self.dismiss(input_widget.value if input_widget.value.strip() else None)
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
 
 
 class ConfirmDeleteModal(ModalScreen[bool]):
