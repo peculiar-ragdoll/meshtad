@@ -38,7 +38,7 @@ class ComposeScreen(Screen):
         self.reply_from = reply_from
 
     def compose(self) -> ComposeResult:
-        to_value = self.to_alias or ""
+        to_value = self.to_alias or self.to_node_id or ""
 
         if self.reply_to_body:
             # Show the message we're replying to
