@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meshtad"
+version = "0.1.0"
+description = "Generic Meshtastic store-and-forward daemon with thin SQLite clients"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "meshtastic==2.7.8",
+    "pyserial==3.5",
+    "textual==8.2.7",
+]
+
+[project.optional-dependencies]
+tui = [
+    "textual==8.2.7",
+]
+dev = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+]
+
+[project.scripts]
+meshtad = "meshtad.main:main"
+meshcli = "meshtad.cli:main"
+meshtui = "meshtad.tui.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["meshtad"]

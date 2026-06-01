@@ -14,6 +14,36 @@ class SetAliasModal(ModalScreen[str | None]):
         ("escape", "dismiss", "Cancel"),
     ]
 
+    DEFAULT_CSS = """
+        SetAliasModal {
+            align: center middle;
+            background: black;
+        }
+        #alias_modal {
+            border: thick green;
+            padding: 1 2;
+            width: 60%;
+            background: black;
+            color: white;
+        }
+        #alias_row {
+            width: 1fr;
+            margin: 1 0;
+        }
+        #alias_label {
+            width: 8;
+            color: green;
+        }
+        #alias_input {
+            color: white;
+            background: #282850;
+            width: 1fr;
+        }
+        #hint {
+            color: #888;
+        }
+    """
+
     def __init__(
         self, node_id: str, existing_alias: str | None = None, **kwargs
     ) -> None:
@@ -24,25 +54,27 @@ class SetAliasModal(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         hint = f" (current: {self.existing_alias})" if self.existing_alias else ""
         yield Vertical(
-            Static(f"Set alias for {self.node_id}{hint}"),
+            Static(f"Set alias for {self.node_id}{hint}", id="title"),
             Horizontal(
-                Static("Alias:"),
+                Static("Alias:", id="alias_label"),
                 Input(
                     value=self.existing_alias or "",
                     placeholder="e.g. emma, dad, t-deck",
                     id="alias_input",
                 ),
+                id="alias_row",
             ),
             Static("[b]Enter[/] to save, [b]Esc[/] to cancel", id="hint"),
             id="alias_modal",
         )
 
     def on_mount(self) -> None:
-        self.query_one("#alias_input", Input).focus()
+        self.query_one("#alias_modal", Vertical).can_focus = False
+        self.call_after_refresh(self.query_one("#alias_input", Input).focus)
 
-    def on_key_enter(self) -> None:
-        input_widget = self.query_one("#alias_input", Input)
-        self.dismiss(input_widget.value if input_widget.value.strip() else None)
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        value = event.value if event.value.strip() else None
+        self.dismiss(value)
 
     def action_dismiss(self) -> None:
         self.dismiss(None)
@@ -55,6 +87,19 @@ class ConfirmDeleteModal(ModalScreen[bool]):
         ("y", "confirm", "Yes"),
         ("n", "dismiss", "No"),
     ]
+
+    DEFAULT_CSS = """
+        ConfirmDeleteModal {
+            align: center middle;
+            background: black;
+        }
+        #question {
+            border: thick red;
+            padding: 1 2;
+            color: white;
+            background: black;
+        }
+    """
 
     def compose(self) -> ComposeResult:
         yield Static("Delete this message? [y/n]", id="question")
@@ -74,6 +119,19 @@ class ConfirmDiscardModal(ModalScreen[bool]):
         ("n", "dismiss", "No"),
     ]
 
+    DEFAULT_CSS = """
+        ConfirmDiscardModal {
+            align: center middle;
+            background: black;
+        }
+        #question {
+            border: thick yellow;
+            padding: 1 2;
+            color: white;
+            background: black;
+        }
+    """
+
     def compose(self) -> ComposeResult:
         yield Static("Discard unsent message? [y/n]", id="question")
 
@@ -92,12 +150,26 @@ class HelpModal(ModalScreen[None]):
         ("escape", "close", "Close"),
     ]
 
+    DEFAULT_CSS = """
+        HelpModal {
+            align: center middle;
+            background: black;
+        }
+        #help_text {
+            border: thick blue;
+            padding: 1 2;
+            width: 60%;
+            color: white;
+            background: black;
+        }
+    """
+
     def __init__(self, bindings: list[tuple[str, str]], **kwargs) -> None:
         super().__init__(**kwargs)
         self._help_bindings = bindings
 
     def compose(self) -> ComposeResult:
-        lines = ["Key Bindings", "",]
+        lines = ["Key Bindings", "", ]
         for key, desc in self._help_bindings:
             lines.append(f"  {key:12}  {desc}")
         yield Static("\n".join(lines), id="help_text", markup=False)
