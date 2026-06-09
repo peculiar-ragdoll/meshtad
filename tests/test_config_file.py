@@ -163,6 +163,11 @@ after_s = 0
         cfg = Config(db_path=pathlib.Path("/tmp/x.db"), auto_delete_global_s=3600)
         assert cfg.resolve_auto_delete("!aabb", db_override=0) is None
 
+    def test_resolve_global_zero_means_never(self):
+        """global_s = 0 returns None (explicit never)."""
+        cfg = Config(db_path=pathlib.Path("/tmp/x.db"), auto_delete_global_s=0)
+        assert cfg.resolve_auto_delete("!aabb", db_override=None) is None
+
     def test_resolve_no_config_returns_none(self):
         """With no overrides at any level, result is None (no auto-delete)."""
         cfg = Config(db_path=pathlib.Path("/tmp/x.db"))

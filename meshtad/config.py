@@ -107,7 +107,8 @@ class Config:
             return int(v) if v else None
         if db_override is not None:
             return int(db_override) if db_override else None
-        return self.auto_delete_global_s
+        v = self.auto_delete_global_s
+        return v if v else None
 
     @classmethod
     def default(cls, base_dir: Optional[pathlib.Path] = None) -> "Config":

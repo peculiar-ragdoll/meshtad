@@ -86,8 +86,10 @@ def main() -> int:
         return 1
 
     if args.cmd == "tui":
-        from meshtad.tui.app import main as tui_main
-        return tui_main()
+        from meshtad.tui.app import MeshtuiApp
+        app = MeshtuiApp(db_path=args.db, cfg_path=args.config)
+        app.run()
+        return 0
 
     cfg_path = (args.config or DEFAULT_CONFIG_PATH).expanduser()
     cfg = Config.from_toml(cfg_path)
