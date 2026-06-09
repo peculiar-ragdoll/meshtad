@@ -4,10 +4,8 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from meshtad.config import Config, ConfigWatcher
+from meshtad.config import Config, ConfigWatcher, DEFAULT_CONFIG_PATH
 from meshtad.daemon import Daemon
-
-DEFAULT_CONFIG_PATH = pathlib.Path("~/.config/meshtad/config.toml").expanduser()
 
 
 def main():
