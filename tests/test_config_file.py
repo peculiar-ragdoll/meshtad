@@ -130,3 +130,35 @@ after_s = 0
 """)
             cfg = Config.from_toml(p)
             assert cfg.auto_delete_per_sender == {"!aabbccdd": 86400, "!11223344": 0}
+
+    def test_resolve_toml_wins_over_db(self):
+        """TOML per-sender entry takes precedence over the DB override."""
+        cfg = Config(
+            db_path=pathlib.Path("/tmp/x.db"),
+            auto_delete_per_sender={"!aabb": 7200},
+        )
+        assert cfg.resolve_auto_delete("!aabb", db_override=1800) == 7200
+
+    def test_resolve_db_fallback_when_no_toml_entry(self):
+        """When sender absent from TOML, DB override is used."""
+        cfg = Config(db_path=pathlib.Path("/tmp/x.db"))
+        assert cfg.resolve_auto_delete("!aabb", db_override=1800) == 1800
+
+    def test_resolve_global_fallback_when_neither(self):
+        """When no TOML or DB override, global_s is used."""
+        cfg = Config(db_path=pathlib.Path("/tmp/x.db"), auto_delete_global_s=900)
+        assert cfg.resolve_auto_delete("!aabb", db_override=None) == 900
+
+    def test_resolve_toml_zero_means_never(self):
+        """after_s = 0 in TOML returns None (explicit never), even with global_s set."""
+        cfg = Config(
+            db_path=pathlib.Path("/tmp/x.db"),
+            auto_delete_per_sender={"!aabb": 0},
+            auto_delete_global_s=3600,
+        )
+        assert cfg.resolve_auto_delete("!aabb", db_override=None) is None
+
+    def test_resolve_no_config_returns_none(self):
+        """With no overrides at any level, result is None (no auto-delete)."""
+        cfg = Config(db_path=pathlib.Path("/tmp/x.db"))
+        assert cfg.resolve_auto_delete("!aabb", db_override=None) is None

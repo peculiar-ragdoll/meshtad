@@ -95,6 +95,19 @@ class Config:
 
         return cfg
 
+    def resolve_auto_delete(self, node_id: str, db_override) -> Optional[int]:
+        """Return effective auto-delete TTL in seconds, or None for no auto-delete.
+
+        Precedence: TOML per-sender → DB per-sender → global default.
+        A value of 0 at any level means explicit "never" (returns None).
+        """
+        if node_id in self.auto_delete_per_sender:
+            v = self.auto_delete_per_sender[node_id]
+            return int(v) if v else None
+        if db_override is not None:
+            return int(db_override) if db_override else None
+        return self.auto_delete_global_s
+
     @classmethod
     def default(cls, base_dir: Optional[pathlib.Path] = None) -> "Config":
         base = base_dir or pathlib.Path("~/.local/share/meshtad").expanduser()
