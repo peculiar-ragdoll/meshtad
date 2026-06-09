@@ -8,6 +8,7 @@ from typing import Optional
 
 logger = logging.getLogger("meshtad.config")
 
+DEFAULT_CONFIG_PATH = pathlib.Path("~/.config/meshtad/config.toml")
 DEFAULT_DB_NAME = "meshtad.db"
 # Meshtastic's Constants.DATA_PAYLOAD_LEN is 233, but after Data-protobuf framing
 # and channel encryption the dongle firmware rejects text payloads above ~220 bytes

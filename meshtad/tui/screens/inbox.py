@@ -6,6 +6,7 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Label, Static
 
+from meshtad.config import Config, DEFAULT_CONFIG_PATH
 from meshtad.db import DbClient
 from meshtad.tui.heartbeat import is_daemon_online
 from meshtad.tui.screens.compose import ComposeScreen
@@ -35,10 +36,7 @@ class InboxScreen(Screen):
     def __init__(self, db_path, cfg=None, **kwargs) -> None:
         super().__init__(**kwargs)
         self.db_path = db_path
-        import pathlib as _pathlib
-        from meshtad.config import Config as _Config
-        _default_cfg_path = _pathlib.Path("~/.config/meshtad/config.toml").expanduser()
-        self.cfg = cfg if cfg is not None else _Config.from_toml(_default_cfg_path)
+        self.cfg = cfg if cfg is not None else Config.from_toml(DEFAULT_CONFIG_PATH.expanduser())
         self.tab_idx = 0
         self._max_id_seen = 0
         self._poll_timer = None

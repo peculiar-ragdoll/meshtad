@@ -2,15 +2,12 @@
 from __future__ import annotations
 
 import argparse
-import pathlib
 import sqlite3
 import sys
 from pathlib import Path
 
-from meshtad.config import Config, MAX_PAYLOAD_BYTES
+from meshtad.config import Config, MAX_PAYLOAD_BYTES, DEFAULT_CONFIG_PATH
 from meshtad.db import DbClient
-
-_DEFAULT_CONFIG_PATH = pathlib.Path("~/.config/meshtad/config.toml").expanduser()
 
 
 def _fmt_size(n: int) -> str:
@@ -92,7 +89,7 @@ def main() -> int:
         from meshtad.tui.app import main as tui_main
         return tui_main()
 
-    cfg_path = (args.config or _DEFAULT_CONFIG_PATH).expanduser()
+    cfg_path = (args.config or DEFAULT_CONFIG_PATH).expanduser()
     cfg = Config.from_toml(cfg_path)
     db_path = args.db or Config.default().db_path
     db = DbClient(db_path)

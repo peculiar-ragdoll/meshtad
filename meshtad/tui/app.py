@@ -6,10 +6,8 @@ import pathlib
 from textual.app import App
 from textual.screen import Screen
 
-from meshtad.config import Config
+from meshtad.config import Config, DEFAULT_CONFIG_PATH
 from meshtad.tui.screens import InboxScreen
-
-_DEFAULT_CONFIG_PATH = pathlib.Path("~/.config/meshtad/config.toml").expanduser()
 
 
 class MeshtuiApp(App):
@@ -26,7 +24,7 @@ class MeshtuiApp(App):
         cfg_path: pathlib.Path | None = None,
     ) -> None:
         self.db_path = db_path or pathlib.Path.home() / ".local" / "share" / "meshtad" / "meshtad.db"
-        self.cfg = Config.from_toml((cfg_path or _DEFAULT_CONFIG_PATH).expanduser())
+        self.cfg = Config.from_toml((cfg_path or DEFAULT_CONFIG_PATH).expanduser())
         super().__init__()
 
     def get_default_screen(self) -> Screen:
