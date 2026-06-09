@@ -455,8 +455,8 @@ class TestEndToEnd:
 # ---------------------------------------------------------------------------
 
 class TestAutoDeletePolicy:
-    def test_global_default_flows_through_resolve_and_mark_read(self, tmp_db, db_thread):
-        """resolve_auto_delete uses global_s when no TOML or DB override; mark_read stamps auto_delete_at."""
+    def test_global_default_applied_end_to_end(self, tmp_db, db_thread):
+        """resolve_auto_delete uses global_s; mark_read stamps auto_delete_at; _sched_tick deletes."""
         from meshtad.config import Config
         from meshtad.db import DbClient
 
@@ -466,38 +466,29 @@ class TestAutoDeletePolicy:
             (int(sid), "global default test"),
         )
         rows = db_thread.execute("SELECT id FROM messages WHERE body='global default test'")
-        msg_id = rows[0][0]
+        msg_id = rows[0]["id"]
 
+        # Resolve: no TOML/DB override → falls back to global_s
         cfg = Config(db_path=tmp_db, auto_delete_global_s=3600)
         client = DbClient(tmp_db)
         srow = client.get_sender_by_id(int(sid))
         ad = cfg.resolve_auto_delete(srow["node_id"], srow["auto_delete_after_s"])
         assert ad == 3600
-        client.mark_read(msg_id, auto_delete_after_s=ad)
 
+        # Mark read: stamps auto_delete_at ~3600s from now
+        client.mark_read(msg_id, auto_delete_after_s=ad)
         msg = client.get_message(msg_id)
         assert msg["state"] == "SEEN"
         assert msg["auto_delete_at"] is not None
 
-    def test_sched_tick_deletes_message_with_resolved_auto_delete_at(self, tmp_db, db_thread):
-        """After resolve + mark_read stamps auto_delete_at in the past, _sched_tick marks it DELETED."""
-        from meshtad.config import Config
-        from meshtad.db import DbClient
-
-        # Insert sender with no per-sender DB override (auto_delete_after_s NULL)
-        sid = db_thread.execute("INSERT INTO senders (node_id) VALUES ('!poltest2')")
-        # Insert a SEEN message with auto_delete_at already in the past (simulates TTL elapsed)
+        # Simulate TTL expiry by backdating auto_delete_at, then run scheduler
         db_thread.execute(
-            "INSERT INTO messages (direction, peer_id, body, state, auto_delete_at) "
-            "VALUES ('in',?,?,'SEEN','2000-01-01T00:00:00Z')",
-            (int(sid), "expired via global"),
+            "UPDATE messages SET auto_delete_at='2000-01-01T00:00:00Z' WHERE id=?",
+            (msg_id,),
         )
-
         d = _daemon_with_mock(tmp_db)
         d.db = db_thread
         d._sched_tick()
 
-        rows = db_thread.execute(
-            "SELECT state FROM messages WHERE body='expired via global'"
-        )
+        rows = db_thread.execute("SELECT state FROM messages WHERE id=?", (msg_id,))
         assert rows[0]["state"] == "DELETED"
