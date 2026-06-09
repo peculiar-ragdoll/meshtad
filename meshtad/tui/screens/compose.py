@@ -37,25 +37,51 @@ class ComposeScreen(Screen):
         self.reply_to_body = reply_to_body
         self.reply_from = reply_from
 
+    DEFAULT_CSS = """
+        #reply_context {
+            color: green;
+            padding: 0 1;
+        }
+        #reply_body {
+            color: #aaa;
+            padding: 0 1;
+        }
+        #reply_sep {
+            color: #555;
+            margin: 1 0;
+        }
+        #compose_to_row {
+            width: 1fr;
+            padding: 0 1;
+        }
+        #compose_to_label {
+            width: 5;
+            color: green;
+        }
+        #compose_body {
+            width: 1fr;
+            height: 1fr;
+        }
+        #compose_status {
+            padding: 0 1;
+        }
+    """
+
     def compose(self) -> ComposeResult:
         to_value = self.to_alias or self.to_node_id or ""
 
         if self.reply_to_body:
             # Show the message we're replying to
-            yield Static(
-                f"Replying to {self.reply_from}:\n{self.reply_to_body}",
-                id="reply_context",
-            )
+            yield Static(f"From: {self.reply_from}", id="reply_context")
+            yield Static(self.reply_to_body, id="reply_body", markup=False)
             yield Static("─" * 40, id="reply_sep", markup=False)
-            yield Static("Your reply:", id="compose_title")
-        else:
-            yield Static("Compose Message", id="compose_title")
 
         yield Horizontal(
             Static("To:", id="compose_to_label"),
             Input(value=to_value, placeholder="Alias or node id", id="compose_to"),
             id="compose_to_row",
         )
+        yield Static("Your reply:", id="compose_title", markup=False)
         yield TextArea(id="compose_body")
         yield Static("", id="compose_status")
         yield Footer()
