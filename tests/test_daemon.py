@@ -448,3 +448,56 @@ class TestEndToEnd:
         d._tx_drain_once()
         rows = db_thread.execute("SELECT state FROM messages WHERE id=?", (mid,))
         assert rows[0]["state"] == "SENT"
+
+
+# ---------------------------------------------------------------------------
+# Auto-delete policy — integration
+# ---------------------------------------------------------------------------
+
+class TestAutoDeletePolicy:
+    def test_global_default_flows_through_resolve_and_mark_read(self, tmp_db, db_thread):
+        """resolve_auto_delete uses global_s when no TOML or DB override; mark_read stamps auto_delete_at."""
+        from meshtad.config import Config
+        from meshtad.db import DbClient
+
+        sid = db_thread.execute("INSERT INTO senders (node_id) VALUES ('!poltest1')")
+        db_thread.execute(
+            "INSERT INTO messages (direction, peer_id, body, state) VALUES ('in',?,?,'UNSEEN')",
+            (int(sid), "global default test"),
+        )
+        rows = db_thread.execute("SELECT id FROM messages WHERE body='global default test'")
+        msg_id = rows[0][0]
+
+        cfg = Config(db_path=tmp_db, auto_delete_global_s=3600)
+        client = DbClient(tmp_db)
+        srow = client.get_sender_by_id(int(sid))
+        ad = cfg.resolve_auto_delete(srow["node_id"], srow["auto_delete_after_s"])
+        assert ad == 3600
+        client.mark_read(msg_id, auto_delete_after_s=ad)
+
+        msg = client.get_message(msg_id)
+        assert msg["state"] == "SEEN"
+        assert msg["auto_delete_at"] is not None
+
+    def test_sched_tick_deletes_message_with_resolved_auto_delete_at(self, tmp_db, db_thread):
+        """After resolve + mark_read stamps auto_delete_at in the past, _sched_tick marks it DELETED."""
+        from meshtad.config import Config
+        from meshtad.db import DbClient
+
+        # Insert sender with no per-sender DB override (auto_delete_after_s NULL)
+        sid = db_thread.execute("INSERT INTO senders (node_id) VALUES ('!poltest2')")
+        # Insert a SEEN message with auto_delete_at already in the past (simulates TTL elapsed)
+        db_thread.execute(
+            "INSERT INTO messages (direction, peer_id, body, state, auto_delete_at) "
+            "VALUES ('in',?,?,'SEEN','2000-01-01T00:00:00Z')",
+            (int(sid), "expired via global"),
+        )
+
+        d = _daemon_with_mock(tmp_db)
+        d.db = db_thread
+        d._sched_tick()
+
+        rows = db_thread.execute(
+            "SELECT state FROM messages WHERE body='expired via global'"
+        )
+        assert rows[0]["state"] == "DELETED"
