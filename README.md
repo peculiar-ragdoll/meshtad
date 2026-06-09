@@ -1,20 +1,20 @@
 # meshtad
 
-A simple meshtastic messenger for your cyberdeck, linux machine or mac.
+Lightweight meshtastic messenger and network gateway daemon for your cyberdeck, linux machine or mac.
 
-Meshtastic store-and-forward daemon `meshtad` has two thin clients:
+The store-and-forward daemon `meshtad` has two thin clients:
 - `meshcli`, the command line interface (CLI) for one-shot commands
 - `meshtui`, the terminal user interface (TUI)
-
 
 ![image](./docs/meshtad_inbox.png)
 
 ## Architecture
+Outgoing and incoming messages are stored in an SQLite database. 
 
 ```
 ┌─────────┐  ┌─────────┐  ┌─────────┐
-│ meshcli │  │ TUI     │  │ Web UI  │
-│ (CLI)   │  │         │  │ (future)│
+│ meshcli │  │ meshtui │  │ Web UI  │
+│ (CLI)   │  │ (TUI)   │  │ (future)│
 └────┬────┘  └────┬────┘  └────┬────┘
      │            │            │
      └────────────┼────────────┘
@@ -26,7 +26,7 @@ Meshtastic store-and-forward daemon `meshtad` has two thin clients:
                   ▼
          ┌─────────────────┐
          │   meshtad       │   RX thread  (pubsub)
-         │   daemon        │   TX thread  (drain outbox)
+         │   (daemon)      │   TX thread  (drain outbox)
          │                 │   Scheduler  (timeouts, cleanup)
          └────────┬────────┘
                   ▼
@@ -36,7 +36,7 @@ Meshtastic store-and-forward daemon `meshtad` has two thin clients:
          └─────────────────┘
 ```
 
-Outgoing and incoming messages to and from the net are stored in an SQLite database. 
+
 
 The daemon in the background manages 
 - Sending messages on the mesh, including retries and failures.
