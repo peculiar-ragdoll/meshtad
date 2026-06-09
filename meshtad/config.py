@@ -33,6 +33,7 @@ class Config:
     retry_base: float = 2.0
     ack_timeout_s: float = 30.0
     auto_delete_global_s: Optional[int] = None
+    auto_delete_per_sender: dict = field(default_factory=dict)
     size_warning_mb: int = 100
     size_warning_enabled: bool = True
     serial_port: Optional[str] = None  # None = auto-detect
@@ -80,6 +81,11 @@ class Config:
 
         if "global_s" in auto_delete:
             cfg.auto_delete_global_s = int(auto_delete["global_s"])
+
+        sender_overrides = auto_delete.get("senders", {})
+        for nid, sub in sender_overrides.items():
+            if isinstance(sub, dict) and "after_s" in sub:
+                cfg.auto_delete_per_sender[nid] = int(sub["after_s"])
 
         if "poll_interval_s" in tui:
             cfg.tui_poll_interval_s = float(tui["poll_interval_s"])

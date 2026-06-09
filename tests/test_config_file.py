@@ -99,3 +99,34 @@ class TestConfigWatcher:
         p = pathlib.Path("/nonexistent/meshtad.toml")
         watcher = ConfigWatcher(p)
         assert watcher.reload_if_changed() is None
+
+
+class TestAutoDeletePerSender:
+    def test_parses_per_sender_entry(self):
+        """[auto_delete.senders."!id"] after_s = N is loaded into auto_delete_per_sender."""
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "config.toml"
+            p.write_text("""
+[auto_delete]
+global_s = 3600
+
+[auto_delete.senders."!aabbccdd"]
+after_s = 86400
+""")
+            cfg = Config.from_toml(p)
+            assert cfg.auto_delete_per_sender == {"!aabbccdd": 86400}
+            assert cfg.auto_delete_global_s == 3600
+
+    def test_multiple_sender_entries(self):
+        """Multiple senders each get their own entry."""
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "config.toml"
+            p.write_text("""
+[auto_delete.senders."!aabbccdd"]
+after_s = 86400
+
+[auto_delete.senders."!11223344"]
+after_s = 0
+""")
+            cfg = Config.from_toml(p)
+            assert cfg.auto_delete_per_sender == {"!aabbccdd": 86400, "!11223344": 0}
