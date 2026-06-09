@@ -95,7 +95,7 @@ class Config:
 
         return cfg
 
-    def resolve_auto_delete(self, node_id: str, db_override) -> Optional[int]:
+    def resolve_auto_delete(self, node_id: str, db_override: Optional[int]) -> Optional[int]:
         """Return effective auto-delete TTL in seconds, or None for no auto-delete.
 
         Precedence: TOML per-sender → DB per-sender → global default.
