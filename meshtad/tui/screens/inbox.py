@@ -32,9 +32,13 @@ class InboxScreen(Screen):
 
     TAB_NAMES = ["Inbox", "Outbox", "History"]
 
-    def __init__(self, db_path, **kwargs) -> None:
+    def __init__(self, db_path, cfg=None, **kwargs) -> None:
         super().__init__(**kwargs)
         self.db_path = db_path
+        import pathlib as _pathlib
+        from meshtad.config import Config as _Config
+        _default_cfg_path = _pathlib.Path("~/.config/meshtad/config.toml").expanduser()
+        self.cfg = cfg if cfg is not None else _Config.from_toml(_default_cfg_path)
         self.tab_idx = 0
         self._max_id_seen = 0
         self._poll_timer = None
@@ -244,7 +248,14 @@ class InboxScreen(Screen):
         if row_idx >= len(rows):
             return
         msg_id = rows[row_idx][0]
-        DbClient(self.db_path).mark_read(msg_id)
+        client = DbClient(self.db_path)
+        msg = client.get_message(msg_id)
+        if msg is not None:
+            sender = client.get_sender_by_id(msg["peer_id"])
+            node_id = sender["node_id"] if sender else ""
+            db_ad = sender["auto_delete_after_s"] if sender else None
+            ad = self.cfg.resolve_auto_delete(node_id, db_ad)
+            client.mark_read(msg_id, auto_delete_after_s=ad)
         self._refresh_table(cursor_row=row_idx)
 
     def action_delete(self) -> None:
