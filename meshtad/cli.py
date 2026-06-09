@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
 import sqlite3
 import sys
 from pathlib import Path
 
 from meshtad.config import Config, MAX_PAYLOAD_BYTES
 from meshtad.db import DbClient
+
+_DEFAULT_CONFIG_PATH = pathlib.Path("~/.config/meshtad/config.toml").expanduser()
 
 
 def _fmt_size(n: int) -> str:
@@ -27,6 +30,12 @@ def _trunc(text: str, width: int = 40) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="meshcli — thin client for meshtad")
     parser.add_argument("--db", type=Path, default=None, help="Path to meshtad.db")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default: ~/.config/meshtad/config.toml)",
+    )
     sub = parser.add_subparsers(dest="cmd")
 
     p_send = sub.add_parser("send", help="Send a DM (fire-and-forget)")
@@ -83,6 +92,8 @@ def main() -> int:
         from meshtad.tui.app import main as tui_main
         return tui_main()
 
+    cfg_path = (args.config or _DEFAULT_CONFIG_PATH).expanduser()
+    cfg = Config.from_toml(cfg_path)
     db_path = args.db or Config.default().db_path
     db = DbClient(db_path)
 
@@ -122,7 +133,9 @@ def main() -> int:
             return 1
         sender_id = row["peer_id"]
         srow = db.get_sender_by_id(sender_id)
-        ad = srow["auto_delete_after_s"] if srow else None
+        node_id = srow["node_id"] if srow else ""
+        db_ad = srow["auto_delete_after_s"] if srow else None
+        ad = cfg.resolve_auto_delete(node_id, db_ad)
         db.mark_read(args.id, auto_delete_after_s=ad)
         print(f"[{row['state']}] from {row['alias'] or row['node_id']}")
         print(row["body"])

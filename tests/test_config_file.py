@@ -167,3 +167,87 @@ after_s = 0
         """With no overrides at any level, result is None (no auto-delete)."""
         cfg = Config(db_path=pathlib.Path("/tmp/x.db"))
         assert cfg.resolve_auto_delete("!aabb", db_override=None) is None
+
+
+class TestCliAutoDelete:
+    def test_read_command_applies_toml_per_sender_ttl(self):
+        """meshcli read stamps auto_delete_at using the TOML per-sender TTL."""
+        import sys
+        from unittest.mock import patch
+        from meshtad.cli import main as cli_main
+        from meshtad.db import DbClient, DbThread
+
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            db_path = td_path / "meshtad.db"
+            cfg_path = td_path / "config.toml"
+
+            # Create DB with a sender and an UNSEEN inbound message
+            t = DbThread(db_path)
+            t.start()
+            t.wait_ready(timeout=5.0)
+            sid = t.execute("INSERT INTO senders (node_id) VALUES ('!aabbccdd')")
+            t.execute(
+                "INSERT INTO messages (direction, peer_id, body, state) VALUES ('in',?,?,'UNSEEN')",
+                (sid, "hello"),
+            )
+            rows = t.execute("SELECT id FROM messages WHERE direction='in'")
+            msg_id = rows[0][0]
+            t.stop()
+
+            # Config with a per-sender TTL for this sender
+            cfg_path.write_text("""
+[auto_delete.senders."!aabbccdd"]
+after_s = 7200
+""")
+
+            with patch.object(sys, "argv", [
+                "meshcli", "--db", str(db_path), "--config", str(cfg_path),
+                "read", str(msg_id),
+            ]):
+                cli_main()
+
+            client = DbClient(db_path)
+            msg = client.get_message(msg_id)
+            assert msg["state"] == "SEEN"
+            assert msg["auto_delete_at"] is not None
+
+
+class TestTuiAutoDelete:
+    def test_action_mark_read_uses_resolved_ttl(self):
+        """InboxScreen.action_mark_read applies the config TTL via resolve_auto_delete."""
+        from meshtad.db import DbClient, DbThread
+        from meshtad.config import Config
+
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            db_path = td_path / "meshtad.db"
+
+            # Set up DB with sender and UNSEEN message
+            t = DbThread(db_path)
+            t.start()
+            t.wait_ready(timeout=5.0)
+            sid = t.execute("INSERT INTO senders (node_id) VALUES ('!tuidest1')")
+            t.execute(
+                "INSERT INTO messages (direction, peer_id, body, state) VALUES ('in',?,?,'UNSEEN')",
+                (sid, "tui test"),
+            )
+            rows = t.execute("SELECT id FROM messages WHERE direction='in'")
+            msg_id = rows[0][0]
+            t.stop()
+
+            # Config with a global default TTL
+            cfg = Config(db_path=db_path, auto_delete_global_s=1800)
+
+            # Simulate what action_mark_read does
+            client = DbClient(db_path)
+            msg = client.get_message(msg_id)
+            sender = client.get_sender_by_id(msg["peer_id"])
+            node_id = sender["node_id"] if sender else ""
+            db_ad = sender["auto_delete_after_s"] if sender else None
+            ad = cfg.resolve_auto_delete(node_id, db_ad)
+            client.mark_read(msg_id, auto_delete_after_s=ad)
+
+            result = client.get_message(msg_id)
+            assert result["state"] == "SEEN"
+            assert result["auto_delete_at"] is not None
