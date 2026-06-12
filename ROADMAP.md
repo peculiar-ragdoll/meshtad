@@ -36,9 +36,10 @@ Just DMs, SQLite, and a CLI.
   - Move `FAILED` → `QUEUED`, reset `retry_count`
 - [ ] **`meshcli reply <id>`**
   - Reply to a received message by reusing its sender ID automatically
+  - *Note: TUI has `r` (reply) in InboxScreen which pre-fills ComposeScreen with the sender. CLI subcommand is still missing.*
 - [ ] **Inbox search / filter**
-  - `meshcli inbox --from <alias>`
-  - `meshcli inbox --since <iso-date>`
+  - [x] `meshcli inbox --with <alias>` — filter inbox by sender alias
+  - [ ] `meshcli inbox --since <iso-date>`
 - [ ] **Message threading**
   - Group related messages by conversation (same sender pair, time proximity)
 
@@ -105,8 +106,13 @@ DONE
 
 ## Phase 4 — Advanced Daemon
 
-- [ ] **Per-sender auto-delete policy**
+- [x] **Per-sender auto-delete policy**
   - Global default + per-sender override in config.toml
+  - `Config.resolve_auto_delete(node_id, db_override)` with 3-level precedence: TOML per-sender → DB per-sender → global default
+  - `[auto_delete.senders."!id"] after_s = N` TOML syntax; `0` means explicit "never"
+  - `senders.auto_delete_after_s` column in DB for per-row overrides
+  - Scheduler tick auto-deletes expired messages; CLI `read` and TUI mark-read stamp `auto_delete_at`
+  - 14 tests in `test_config_file.py` covering precedence, zero-semantics, CLI/TUI integration
 - [ ] **Message archive / export**
   - `meshcli export --since … --format json|csv`
 - [ ] **Rate limiting / airtime budget**
