@@ -130,7 +130,7 @@ class DbThread(threading.Thread):
         if self._conn:
             try:
                 self._conn.close()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
     def wait_ready(self, timeout: float = 10.0) -> bool:
@@ -171,7 +171,7 @@ class DbClient:
         """Return (sender_id, node_id) or None."""
         with contextlib.closing(self._conn()) as conn:
             for col in ("alias", "node_id"):
-                cur = conn.execute(f"SELECT id, node_id FROM senders WHERE {col}=? COLLATE NOCASE", (alias_or_id,))
+                cur = conn.execute(f"SELECT id, node_id FROM senders WHERE {col}=? COLLATE NOCASE", (alias_or_id,))  # nosec B608
                 row = cur.fetchone()
                 if row:
                     return int(row[0]), str(row[1])
@@ -191,7 +191,7 @@ class DbClient:
             raise ValueError(f"Disallowed sender field(s): {disallowed}")
         with contextlib.closing(self._conn()) as conn:
             for k, v in fields.items():
-                conn.execute(f"UPDATE senders SET {k}=? WHERE id=?", (v, sender_id))
+                conn.execute(f"UPDATE senders SET {k}=? WHERE id=?", (v, sender_id))  # nosec B608
             conn.commit()
 
     # ---- messages ----
@@ -238,7 +238,7 @@ class DbClient:
             WHERE {' AND '.join(where)}
             ORDER BY m.queued_at DESC
             LIMIT ?
-        """
+        """  # nosec B608
         params.append(limit)
         with contextlib.closing(self._conn()) as conn:
             return conn.execute(sql, params).fetchall()
@@ -258,7 +258,7 @@ class DbClient:
             WHERE {' AND '.join(where)}
             ORDER BY m.queued_at DESC
             LIMIT ?
-        """
+        """  # nosec B608
         params.append(limit)
         with contextlib.closing(self._conn()) as conn:
             return conn.execute(sql, params).fetchall()

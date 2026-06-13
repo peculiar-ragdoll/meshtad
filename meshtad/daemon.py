@@ -276,7 +276,7 @@ class Daemon:
                     t = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00")).timestamp()
                     if t < time.time() - self.cfg.ack_timeout_s:
                         self._handle_send_failure(msg_id, retry_count, "ack_timeout")
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
         # 2. Auto-delete
@@ -304,7 +304,7 @@ class Daemon:
                 size_mb = self.cfg.db_path.stat().st_size / (1024 * 1024)
                 if size_mb > self.cfg.size_warning_mb:
                     logger.warning("DB size %.1f MB exceeds threshold %s MB", size_mb, self.cfg.size_warning_mb)
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
         # 5. Heartbeat for TUI liveness

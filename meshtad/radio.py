@@ -12,7 +12,7 @@ try:
     import meshtastic.util
     from pubsub import pub
     MESHTASTIC_AVAILABLE = True
-except Exception:
+except Exception:  # nosec B110
     pass
 
 
@@ -41,7 +41,7 @@ class Radio:
         if self.client:
             try:
                 self.client.close()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
         self.client = None
         self.connected = False

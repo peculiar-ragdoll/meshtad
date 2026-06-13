@@ -23,6 +23,10 @@ dev = [
     "pytest==9.0.3",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
+    "ruff==0.9.9",
+    "mypy==2.1.0",
+    "pip-audit==2.9.0",
+    "bandit==1.9.4",
 ]
 
 [project.scripts]
@@ -32,3 +36,72 @@ meshtui = "meshtad.tui.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["meshtad"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # line-too-long (handled by ruff format)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["meshtad"]
+
+# ---------------------------------------------------------------------------
+# Mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # gradual adoption
+follow_imports = "silent"      # meshtastic has no stubs
+
+[[tool.mypy.overrides]]
+module = "meshtastic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pubsub.*"
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["meshtad"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+
+# ---------------------------------------------------------------------------
+# Bandit — static security analysis
+# ---------------------------------------------------------------------------
+[tool.bandit]
+skips = ["B101"]  # assert_used — fine in tests
+exclude_dirs = ["tests", ".venv"]
